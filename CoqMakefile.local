@@ -1,0 +1,5 @@
+all:
+    coqc ref_syntax.v ref_semantics.v
+
+clean:
+    rm *.vo *.glob
