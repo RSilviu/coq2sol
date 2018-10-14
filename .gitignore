@@ -1,3 +1,10 @@
 *.glob
 *.vo
 *.aux
+
+/[0-9]*.v
+att1.v
+latest.v
+sf_relations.v
+sfaturi.txt
+w13.v
