@@ -11,6 +11,10 @@ Inductive step : State -> State -> Prop :=
 | skip:
     forall rest env,
       step (Skip :: rest, env) (rest, env)
+| return_instr:
+    forall a v rest env,
+    Some v = (evalaexp env a) ->
+    step (Return a :: rest, env) (nil, env)
 | assign :
     forall a x v rest env,
       Some v = (evalaexp env a) ->
@@ -33,6 +37,11 @@ Inductive steps : State -> State -> Prop :=
     steps S S
 | trans: forall S S' S'',
     step S S' -> steps S' S'' -> steps S S''.
+
+
+
+
+
 
 Definition n := Id "n".
 Definition sum := Id "sum".
