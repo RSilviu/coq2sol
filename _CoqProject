@@ -1,1 +1,3 @@
--R . ""
+-R main/ main
+main/Syntax.v
+main/Semantics.v
