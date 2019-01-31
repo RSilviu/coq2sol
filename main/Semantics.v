@@ -107,6 +107,7 @@ Inductive steps : ExecutionState -> ExecutionState -> Prop :=
 Let receiver := "addr"%string.
 Let amount := 1%Z.
 
+(* Example for: address.transfer(amount) *)
 Example transfer_ex:
   steps (Transfer receiver amount :: nil, Empty_FunctionEnv, nil, Default_ContractState)
         (nil, replace_bmap Empty_FunctionEnv (updateBalance (updateBalance Empty_BalanceMap receiver amount) (c_address Default_ContractState) (-amount)), nil, Default_ContractState)
@@ -133,6 +134,7 @@ Let env_before_call := (replace_aexp_env initial_env (declareAexpList (aexp_env 
 Let called_fn_env := replace_msg_data initial_env (mkMsg msg_val (c_address calling_contract)).
 
 
+(* example showing function call system *)
 Example Step_Into_Call :
   steps (current_code, initial_env, nil, calling_contract)
         (fn_code, called_fn_env, (env_before_call, calling_contract) :: nil, called_contract).
