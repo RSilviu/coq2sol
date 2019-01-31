@@ -3,7 +3,8 @@ Require Import String.
 
 Require Import List.
 
-(* consistency in types: w/o option *)
+
+(** Basic types *)
 
 Inductive aexp :=
 | Int : Z -> aexp
@@ -12,8 +13,6 @@ Inductive aexp :=
 | Mul : aexp -> aexp -> aexp
 | Div : aexp -> aexp -> aexp
 | Rem : aexp -> aexp -> aexp.
-
-Check aexp.
 
 Inductive bexp :=
 | Boolean : bool -> bexp
@@ -31,36 +30,26 @@ Inductive bexp :=
 Definition Default_Aexp := Int 0.
 Definition Default_Bexp := Boolean false.
 
-(** ADDRESS *)
-Definition address := nat.
-Definition address_payable := nat.
+
+(** Solidity address *)
+
+Definition address := string.
+Definition address_payable := string.
+
+
+(** Statements *)
 
 Inductive instr :=
+| Declare_Aexp : list string -> instr
 | Assignment_Aexp : string -> aexp -> instr
 | Assignment_Bexp : string -> bexp -> instr
 | IfThenElse : bexp -> list instr -> list instr -> instr
 | While : bexp -> list instr -> instr
 | Skip : instr
-(* to be continued *)
-| Function_Call : address -> string -> Z -> instr (* determine calling contract *) (* add args & return *) (* support message calls *)
+| Function_Call : address -> string -> Z -> instr
 | Transfer : address_payable -> Z -> instr
-(* | Balance : address -> instr *).
+(*| Balance : address -> instr *).
 
-
-(* Notation "id ()" := (Function_Call id) (at level 50).
-
-Let fn := "pay"%string.
-
-Check fn ().
- *)
-Inductive err :=
-| VarError.
-
-(* Record function :=
-mkFunction{
- name : string;
- body : list instr
-}. *)
 
 Inductive function_body :=
 | Body : list instr -> function_body
@@ -68,7 +57,9 @@ Inductive function_body :=
 
 Definition Code := list instr.
 
-(* Definition Env := string ->  option Z. *)
+
+(** Environment *)
+
 Definition Env (T : Type) := string -> option T.
 
 Definition Aexp_Env := Env Z.
@@ -80,13 +71,17 @@ Definition Empty_Bexp_Env : Bexp_Env := fun x => None.
 Definition Functions_Env := Env function_body.
 Definition Empty_Functions_Env : Functions_Env := fun x => None.
 
+
+(** Contract balances *)
+
 Definition BalanceMap := address -> Z.
 Definition Empty_BalanceMap : BalanceMap := fun a => 0%Z.
 
 Definition updateBalance (map : BalanceMap) (addr : address) (amount : Z) : address -> Z :=
-fun a' => if beq_nat addr a' then amount else map a'.
+fun a' => if string_dec addr a' then amount else map a'.
 
 
+(** Message structure *)
 
 Record msg :=
 mkMsg {
@@ -95,9 +90,10 @@ sender : address_payable
 }.
 
 Definition Default_Msg := {| value := 0%Z;
-                             sender := 0 |}.
+                             sender := "x"%string |}.
 
-(* contract fn env, contract state *)
+
+(** Function scope *)
 
 Record FunctionEnv :=
 mkEnv {
@@ -125,6 +121,8 @@ Definition replace_msg_data :=
 fun (fenv : FunctionEnv) (new_msg : msg) => mkEnv (aexp_env fenv) (bexp_env fenv) (next_code fenv) (balance_map fenv) new_msg.
 
 
+(** Contract scope *)
+
 Record ContractState :=
 mkContractState {
  c_address : address;
@@ -134,12 +132,13 @@ mkContractState {
  bexp_vars : Bexp_Env
 }.
 
-Definition Default_ContractState := {| c_address := 0;
+Definition Default_Address := "home"%string.
+
+Definition Default_ContractState := {| c_address := Default_Address;
                                        constructed := true;
                                        fn_env := Empty_Functions_Env;
                                        aexp_vars := Empty_Aexp_Env;
                                        bexp_vars := Empty_Bexp_Env |}.
-
 
 Definition Empty_FunctionEnv := {| aexp_env := Empty_Aexp_Env;
                                 bexp_env := Empty_Bexp_Env;
@@ -147,16 +146,29 @@ Definition Empty_FunctionEnv := {| aexp_env := Empty_Aexp_Env;
                                 balance_map := Empty_BalanceMap;
                                 msg_data := Default_Msg |}.
 
+
+(** Environment utils *)
+
 Definition defineFunction (env : Functions_Env) (name : string) (body : function_body) : Functions_Env :=
   fun x => if (string_dec x name) then Some body
   else (env x).
-
 
 Definition getFunctionCode (opt_body : option function_body) : Code :=
   match opt_body with
   | Some (Body code) => code
   | _ => nil
   end.
+
+
+Definition ContractsEnv := address -> ContractState.
+Definition Empty_ContractsEnv : ContractsEnv := fun x => Default_ContractState.
+
+(*
+Definition defineContract (env : ContractsEnv) (a : address) (c_state : ContractState) : ContractsEnv :=
+  fun x => if (string_dec x a) then c_state
+  else (env x). *)
+
+
 
 (* Let body := Body (Skip :: nil).
 Let emptyBody := EmptyBody.
@@ -168,10 +180,16 @@ Let fun_env := defineFunction emptyFnEnv fn_name emptyBody.
 Compute getFunctionCode (fun_env "foo"%string). *)
 
 
-(* UTILS *)
 Definition declareAexp (ident : string) : Aexp_Env :=
   fun x => if (string_dec x ident) then Some 0%Z
            else None.
+
+Fixpoint declareAexpList (env : Aexp_Env) (ids : list string) : Aexp_Env :=
+fun x => match ids with
+| nil => env x
+| id :: rest => if (string_dec x id) then Some 0%Z
+           else declareAexpList env rest x
+end.
 
 Definition updateAexp (env : Aexp_Env) (var : string) (val : Z) : Aexp_Env :=
   fun x => if (string_dec x var) then Some val
@@ -246,6 +264,19 @@ Fixpoint evalbexp (aexp_env : Aexp_Env) (bexp_env : Bexp_Env) (b : bexp) : optio
                  | _, _ => None
                  end
   end.
+
+
+Definition unfoldOptionZ (opt_z : option Z) :=
+match opt_z with
+| Some v => v
+| _ => 0%Z
+end.
+
+Definition unfoldOptionBool (opt_bool : option bool) :=
+match opt_bool with
+| Some v => v
+| _ => false
+end.
 
 
 (* Let n := AId "n".

@@ -3,60 +3,31 @@ Require Import String.
 Require Import List.
 
 Require Import main.Syntax.
-Require Import SolEnv.
 
 Open Scope list_scope.
 
 
-(* Definition EnvStack := list AlphaEnv. *)
+(* TODO: Move to Proofs *)
+Let fn_vars := "fa"%string :: nil.
+Let fn_code := Declare_Aexp fn_vars  :: nil.
+Let fname := "called_fn"%string.
+Definition cc_funs_env := defineFunction Empty_Functions_Env fname (Body fn_code).
+
+
+Let calling_contract := Default_ContractState.
+Let called_addr := "called_contract"%string.
+Let called_contract := mkContractState called_addr true cc_funs_env Empty_Aexp_Env Empty_Bexp_Env.
+
+
+Definition c_env (addr : address) : ContractState :=
+match addr with
+| called_addr => called_contract
+end.
+
+
 Definition EnvStack := list (FunctionEnv * ContractState).
-(* Definition State : Type :=  Code * AlphaEnv * EnvStack. *)
+
 Definition ExecutionState : Type :=  Code * FunctionEnv * EnvStack * ContractState.
-
-(* ecord AlphaEnv :=
-{
-(*  names : list string; *)
- aexp_env : Aexp_Env;
- bexp_env : Bexp_Env;
- fn_env : Functions_Env
-}.*)
-
-Definition unfoldOptionZ (opt_z : option Z) :=
-match opt_z with
-| Some v => v
-| _ => 0%Z
-end.
-
-Definition unfoldOptionBool (opt_bool : option bool) :=
-match opt_bool with
-| Some v => v
-| _ => false
-end.
-
-(* Definition BalanceMap := address -> Z
-
-Definition updateBalance (map : BalanceMap) (addr : address) (amount : Z) : address -> Z :=
-fun a' => if addr = a' then amount else map a'.
- *)
-
-(* Record FunctionEnv :=
-mkEnv {
-(*  names : list string; *)
- aexp_env : Aexp_Env;
- bexp_env : Bexp_Env;
- fn_env : Functions_Env;
- next_code : Code;
- balance_map : BalanceMap;
- msg_data : msg
-}.
-
-Record ContractState :=
-mkContractState {
- c_address : address;
- constructed : bool;
- aexp_vars : Aexp_Env;
- bexp_vars : Bexp_Env
-}. *)
 
 Inductive step : ExecutionState -> ExecutionState -> Prop :=
 | transfer:
@@ -71,22 +42,27 @@ Inductive step : ExecutionState -> ExecutionState -> Prop :=
            env_stack,
            c_st)
 
-(* handle fn args & return *)
-(* consider contract state changes *)
-(* for now, all happens in same contract *)
 | function_call:
-    forall called_addr msg_val env env_stack c_st fenv fcode fname rest,
-      fcode = getFunctionCode ((fn_env c_st) fname) ->
+    forall called_addr msg_val env env_stack c_st c_st' fenv fcode fname rest,
+      c_st' = c_env called_addr ->
+      fcode = getFunctionCode ((fn_env c_st') fname) ->
       fenv = mkEnv (Empty_Aexp_Env) (Empty_Bexp_Env) (rest) (balance_map env) (mkMsg msg_val (c_address c_st)) ->
-      step ((Function_Call called_addr fname msg_val) :: rest, env, env_stack, c_st) (fcode, fenv, (env, c_st) :: env_stack, (c_env called_addr))
+      step ((Function_Call called_addr fname msg_val) :: rest, env, env_stack, c_st) (fcode, fenv, (env, c_st) :: env_stack, c_st')
 
 | function_exit:
     forall (fenv fenv' : FunctionEnv) (c_st c_st' : ContractState) env_stack,
       step (nil, fenv, (fenv', c_st') :: env_stack, c_st)
            (next_code fenv', fenv', env_stack, c_st')
+
 | skip:
     forall rest env env_stack c_st,
       step (Skip :: rest, env, env_stack, c_st) (rest, env, env_stack, c_st)
+
+| declare_aexp:
+    forall aexp_names rest env env' env_stack c_st,
+      let aexp_env' := declareAexpList (aexp_env env) aexp_names in
+      env' = mkEnv aexp_env' (bexp_env env) (next_code env) (balance_map env) (msg_data env) ->
+      step ((Declare_Aexp aexp_names) :: rest, env, env_stack, c_st) (rest, env', env_stack, c_st)
 
 | assign_aexp : 
     forall a x rest env env' env_stack c_st,
@@ -126,13 +102,18 @@ Inductive steps : ExecutionState -> ExecutionState -> Prop :=
 
 
 
+(* Examples *)
 
+Let receiver := "addr"%string.
+Let amount := 1%Z.
+
+(* Example for: address.transfer(amount) *)
 Example transfer_ex:
-  steps (Transfer 7 1 :: nil, Empty_FunctionEnv, nil, Default_ContractState)
-        (nil, replace_bmap Empty_FunctionEnv (updateBalance (updateBalance Empty_BalanceMap 7 1) 0 (-1)%Z), nil, Default_ContractState)
+  steps (Transfer receiver amount :: nil, Empty_FunctionEnv, nil, Default_ContractState)
+        (nil, replace_bmap Empty_FunctionEnv (updateBalance (updateBalance Empty_BalanceMap receiver amount) (c_address Default_ContractState) (-amount)), nil, Default_ContractState)
   .
 Proof.
-  apply trans with (S' := (nil, replace_bmap Empty_FunctionEnv (updateBalance (updateBalance Empty_BalanceMap 7 1) 0 (-1)%Z), nil, Default_ContractState)).
+  apply trans with (S' := (nil, replace_bmap Empty_FunctionEnv (updateBalance (updateBalance Empty_BalanceMap receiver amount) (c_address Default_ContractState) (-amount)), nil, Default_ContractState)).
   {
     apply transfer. simpl. reflexivity.
   }
@@ -143,86 +124,42 @@ Proof.
 
 
 
+Let msg_val := 0%Z.
+
+Let current_vars := "a"%string :: nil.
+Let current_code := (Declare_Aexp current_vars) :: (Function_Call called_addr fname msg_val) :: nil.
+
+Let initial_env := Empty_FunctionEnv.
+Let env_before_call := (replace_aexp_env initial_env (declareAexpList (aexp_env initial_env) current_vars)).
+Let called_fn_env := replace_msg_data initial_env (mkMsg msg_val (c_address calling_contract)).
 
 
-
-
-
-
-
-
-
-
-Definition SUM_Code := (Assignment_Aexp "n" (Int 10) ::
-                   Assignment_Aexp "sum" (Int 0) ::
-                   While (Aexp_Geq (AId "n") (Int 1)) (
-                     Assignment_Aexp "sum" (Plus (AId "n") (AId "sum")) ::
-                     Assignment_Aexp "n" (Plus (AId "n") (Int (Z.opp 1))) :: nil
-                   ) :: nil).
-                  
-Check SUM_Code.
-
-Let body := Body SUM_Code.
-(* Let emptyBody := EmptyBody. *)
-Let emptyFnEnv : Functions_Env := fun f => None.
-Let fn_name : string := "SUM".
-
-Let fun_env := defineFunction emptyFnEnv fn_name body.
-
-Definition Program_Env := mkEnv Empty_Aexp_Env Empty_Bexp_Env nil.
-
-Definition Program := Assignment_Aexp "n" (Int 1) :: 
-                      Function_Call 10 fn_name 0 :: nil.
-
-Let targetCode := Assignment_Aexp "n" (Int 10) :: nil.
-
-(* Let stackEnv := mkEnv (updateAexp (aexp_env ( Program_Env) "n" 1) Empty_Bexp_Env fun_env nil. *)
-
-Let targetEnv := Program_Env. 
-
-Let targetEnvStack := stackEnv :: nil.
-
+(* example showing function call system *)
 Example Step_Into_Call :
-  steps (Assignment_Aexp "n" (Int 1) :: Function_Call "SUM" :: nil,
-   mkEnv Empty_Aexp_Env Empty_Bexp_Env fun_env nil,
-   nil)
-  (Assignment_Aexp "n" (Int 10) ::
-                   Assignment_Aexp "sum" (Int 0) ::
-                   While (Aexp_Geq (AId "n") (Int 1)) (
-                     Assignment_Aexp "sum" (Plus (AId "n") (AId "sum")) ::
-                     Assignment_Aexp "n" (Plus (AId "n") (Int (Z.opp 1))) :: nil
-                   ) :: nil,
-   mkEnv Empty_Aexp_Env Empty_Bexp_Env fun_env nil,
-   (mkEnv (updateAexp (aexp_env Program_Env) "n" 1) Empty_Bexp_Env fun_env nil) :: nil).
+  steps (current_code, initial_env, nil, calling_contract)
+        (fn_code, called_fn_env, (env_before_call, calling_contract) :: nil, called_contract).
 Proof.
-  apply trans with (S' := (Function_Call "SUM" :: nil,
-                          (mkEnv (updateAexp (aexp_env Program_Env) "n" 1) Empty_Bexp_Env fun_env nil),
-                          nil)).
-  -apply assign_aexp. simpl. reflexivity.
-  (* -apply trans with (S' := (Assignment_Aexp "n" (Int 10) :: nil,
-   mkEnv Empty_Aexp_Env Empty_Bexp_Env fun_env,
-   (mkEnv (updateAexp (aexp_env Program_Env) "n" 1) Empty_Bexp_Env fun_env) :: nil)). *)
-  -apply trans with (S' := (Assignment_Aexp "n" (Int 10) ::
-                   Assignment_Aexp "sum" (Int 0) ::
-                   While (Aexp_Geq (AId "n") (Int 1)) (
-                     Assignment_Aexp "sum" (Plus (AId "n") (AId "sum")) ::
-                     Assignment_Aexp "n" (Plus (AId "n") (Int (Z.opp 1))) :: nil
-                   ) :: nil,
-  mkEnv Empty_Aexp_Env Empty_Bexp_Env fun_env nil,
-   (mkEnv (updateAexp (aexp_env Program_Env) "n" 1) Empty_Bexp_Env fun_env nil) :: nil)).
+  apply trans with (S' := ((Function_Call called_addr fname msg_val) :: nil, env_before_call, nil, calling_contract)).
+  - apply declare_aexp. simpl. reflexivity.
+  -apply trans with (S' := (fn_code, called_fn_env, (env_before_call, calling_contract) :: nil, called_contract)).
     *apply function_call.
      {
-      simpl. reflexivity.
+      reflexivity.
      }
      {
-      simpl. reflexivity.
+      reflexivity.
+     }
+     {
+      reflexivity.
      }
     * apply refl.
   Qed.
 
 
+(** Old, needs change *)
+(*
 Example Call_With_Code_After :
-  steps (Assignment_Aexp "n" (Int 1) :: Function_Call "SUM" :: Assignment_Aexp "n" (Int 99) :: nil,
+  steps ((Declare_Aexp "n" :: nil) :: Function_Call "SUM" :: Assignment_Aexp "n" (Int 99) :: nil,
    mkEnv Empty_Aexp_Env Empty_Bexp_Env fun_env nil,
    nil)
   (Assignment_Aexp "n" (Int 10) ::
@@ -295,33 +232,5 @@ Proof.
    { simpl. apply function_exit. reflexivity. }
    { apply refl. }
   Qed.
-
-
-
-
-
-
-
-
-
-
-(* Example Run :
-  steps (Program, Program_Env, nil) (targetCode, targetEnv, targetEnvStack).
-Proof.
-  apply trans with (S' := (targetCode, targetEnv, targetEnvStack)).
-  -apply assign_aexp.
- *)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+  
+*)
