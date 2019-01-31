@@ -5,7 +5,6 @@ Require Import List.
 
 
 (** Basic types *)
-(* consistency in types: w/o option *)
 
 Inductive aexp :=
 | Int : Z -> aexp
@@ -41,6 +40,7 @@ Definition address_payable := string.
 (** Statements *)
 
 Inductive instr :=
+| Declare_Aexp : list string -> instr
 | Assignment_Aexp : string -> aexp -> instr
 | Assignment_Bexp : string -> bexp -> instr
 | IfThenElse : bexp -> list instr -> list instr -> instr
@@ -132,7 +132,9 @@ mkContractState {
  bexp_vars : Bexp_Env
 }.
 
-Definition Default_ContractState := {| c_address := "x"%string;
+Definition Default_Address := "home"%string.
+
+Definition Default_ContractState := {| c_address := Default_Address;
                                        constructed := true;
                                        fn_env := Empty_Functions_Env;
                                        aexp_vars := Empty_Aexp_Env;
@@ -151,12 +153,22 @@ Definition defineFunction (env : Functions_Env) (name : string) (body : function
   fun x => if (string_dec x name) then Some body
   else (env x).
 
-
 Definition getFunctionCode (opt_body : option function_body) : Code :=
   match opt_body with
   | Some (Body code) => code
   | _ => nil
   end.
+
+
+Definition ContractsEnv := address -> ContractState.
+Definition Empty_ContractsEnv : ContractsEnv := fun x => Default_ContractState.
+
+(*
+Definition defineContract (env : ContractsEnv) (a : address) (c_state : ContractState) : ContractsEnv :=
+  fun x => if (string_dec x a) then c_state
+  else (env x). *)
+
+
 
 (* Let body := Body (Skip :: nil).
 Let emptyBody := EmptyBody.
@@ -171,6 +183,13 @@ Compute getFunctionCode (fun_env "foo"%string). *)
 Definition declareAexp (ident : string) : Aexp_Env :=
   fun x => if (string_dec x ident) then Some 0%Z
            else None.
+
+Fixpoint declareAexpList (env : Aexp_Env) (ids : list string) : Aexp_Env :=
+fun x => match ids with
+| nil => env x
+| id :: rest => if (string_dec x id) then Some 0%Z
+           else declareAexpList env rest x
+end.
 
 Definition updateAexp (env : Aexp_Env) (var : string) (val : Z) : Aexp_Env :=
   fun x => if (string_dec x var) then Some val
@@ -245,6 +264,19 @@ Fixpoint evalbexp (aexp_env : Aexp_Env) (bexp_env : Bexp_Env) (b : bexp) : optio
                  | _, _ => None
                  end
   end.
+
+
+Definition unfoldOptionZ (opt_z : option Z) :=
+match opt_z with
+| Some v => v
+| _ => 0%Z
+end.
+
+Definition unfoldOptionBool (opt_bool : option bool) :=
+match opt_bool with
+| Some v => v
+| _ => false
+end.
 
 
 (* Let n := AId "n".
