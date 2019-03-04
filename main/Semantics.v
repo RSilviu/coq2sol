@@ -31,11 +31,12 @@ Definition ExecutionState : Type :=  Code * FunctionEnv * EnvStack * ContractSta
 
 Inductive step : ExecutionState -> ExecutionState -> Prop :=
 | transfer:
-    forall dest_addr amount final_bm rest fenv env_stack c_st,
-      let src_addr := (c_address c_st) in
-      let old_bm := (balance_map fenv) in
-      let new_bm := (updateBalance old_bm dest_addr ((old_bm dest_addr) + amount)) in
-      final_bm = (updateBalance new_bm src_addr ((new_bm src_addr) - amount)) ->
+    forall dest_addr amount value final_bm rest fenv env_stack c_st new_bm src_addr old_bm,
+      src_addr = (c_address c_st) ->
+      old_bm = (balance_map fenv) ->
+      value = unfoldOptionZ (evalaexp (aexp_env fenv) amount) ->
+      new_bm = (updateBalance old_bm dest_addr ((old_bm dest_addr) + value)) ->
+      final_bm = (updateBalance new_bm src_addr ((new_bm src_addr) - value)) ->
       step (Transfer dest_addr amount :: rest, fenv, env_stack, c_st)
            (rest,
            mkEnv (aexp_env fenv) (bexp_env fenv) rest final_bm (msg_data fenv),
@@ -43,10 +44,11 @@ Inductive step : ExecutionState -> ExecutionState -> Prop :=
            c_st)
 
 | function_call:
-    forall called_addr msg_val env env_stack c_st c_st' fenv fcode fname rest,
+    forall called_addr msg_val value env env_stack c_st c_st' fenv fcode fname rest,
       c_st' = c_env called_addr ->
       fcode = getFunctionCode ((fn_env c_st') fname) ->
-      fenv = mkEnv (Empty_Aexp_Env) (Empty_Bexp_Env) (rest) (balance_map env) (mkMsg msg_val (c_address c_st)) ->
+      value = unfoldOptionZ (evalaexp (aexp_env env) msg_val) ->
+      fenv = mkEnv (Empty_Aexp_Env) (Empty_Bexp_Env) (rest) (balance_map env) (mkMsg value (c_address c_st)) ->
       step ((Function_Call called_addr fname msg_val) :: rest, env, env_stack, c_st) (fcode, fenv, (env, c_st) :: env_stack, c_st')
 
 | function_exit:
@@ -59,22 +61,22 @@ Inductive step : ExecutionState -> ExecutionState -> Prop :=
       step (Skip :: rest, env, env_stack, c_st) (rest, env, env_stack, c_st)
 
 | declare_aexp:
-    forall aexp_names rest env env' env_stack c_st,
-      let aexp_env' := declareAexpList (aexp_env env) aexp_names in
+    forall aexp_env' aexp_names rest env env' env_stack c_st,
+      aexp_env' = declareAexpList (aexp_env env) aexp_names ->
       env' = mkEnv aexp_env' (bexp_env env) (next_code env) (balance_map env) (msg_data env) ->
       step ((Declare_Aexp aexp_names) :: rest, env, env_stack, c_st) (rest, env', env_stack, c_st)
 
 | assign_aexp : 
-    forall a x rest env env' env_stack c_st,
-      let v := unfoldOptionZ (evalaexp (aexp_env env) a) in
-      let aexp_env' := updateAexp (aexp_env env) x v in
+    forall a x v aexp_env' rest env env' env_stack c_st,
+      v = unfoldOptionZ (evalaexp (aexp_env env) a) ->
+      aexp_env' = updateAexp (aexp_env env) x v ->
       env' = mkEnv aexp_env' (bexp_env env) (next_code env) (balance_map env) (msg_data env) ->
       step (Assignment_Aexp x a :: rest, env, env_stack, c_st) (rest, env', env_stack, c_st)
 
 | assign_bexp :
-    forall b x rest env env' env_stack c_st,
-      let v := unfoldOptionBool (evalbexp (aexp_env env) (bexp_env env) b) in
-      let bexp_env' := updateBexp (bexp_env env) x v in
+    forall b x v bexp_env' rest env env' env_stack c_st,
+      v = unfoldOptionBool (evalbexp (aexp_env env) (bexp_env env) b) ->
+      bexp_env' = updateBexp (bexp_env env) x v ->
       env' = mkEnv (aexp_env env) (bexp_env') (next_code env) (balance_map env) (msg_data env) ->
       step (Assignment_Bexp x b :: rest, env, env_stack, c_st) (rest, env', env_stack, c_st)
 
@@ -105,17 +107,18 @@ Inductive steps : ExecutionState -> ExecutionState -> Prop :=
 (* Examples *)
 
 Let receiver := "addr"%string.
-Let amount := 1%Z.
+Let amount := Int 1%Z.
+Let amount_z := 1%Z.
 
 (* Example for: address.transfer(amount) *)
 Example transfer_ex:
   steps (Transfer receiver amount :: nil, Empty_FunctionEnv, nil, Default_ContractState)
-        (nil, replace_bmap Empty_FunctionEnv (updateBalance (updateBalance Empty_BalanceMap receiver amount) (c_address Default_ContractState) (-amount)), nil, Default_ContractState)
+        (nil, replace_bmap Empty_FunctionEnv (updateBalance (updateBalance Empty_BalanceMap receiver amount_z) (c_address Default_ContractState) (-amount_z)), nil, Default_ContractState)
   .
 Proof.
-  apply trans with (S' := (nil, replace_bmap Empty_FunctionEnv (updateBalance (updateBalance Empty_BalanceMap receiver amount) (c_address Default_ContractState) (-amount)), nil, Default_ContractState)).
+  eapply trans.
   {
-    apply transfer. simpl. reflexivity.
+    eapply transfer; eauto.
   }
   {
     apply refl.
@@ -124,36 +127,27 @@ Proof.
 
 
 
-Let msg_val := 0%Z.
-
+Let msg_val := Int 0%Z.
+Let msg_val_z := 0%Z.
 Let current_vars := "a"%string :: nil.
 Let current_code := (Declare_Aexp current_vars) :: (Function_Call called_addr fname msg_val) :: nil.
 
 Let initial_env := Empty_FunctionEnv.
 Let env_before_call := (replace_aexp_env initial_env (declareAexpList (aexp_env initial_env) current_vars)).
-Let called_fn_env := replace_msg_data initial_env (mkMsg msg_val (c_address calling_contract)).
+Let called_fn_env := replace_msg_data initial_env (mkMsg  msg_val_z (c_address calling_contract)).
 
 
-(* example showing function call system *)
+(* function call *)
 Example Step_Into_Call :
   steps (current_code, initial_env, nil, calling_contract)
         (fn_code, called_fn_env, (env_before_call, calling_contract) :: nil, called_contract).
 Proof.
-  apply trans with (S' := ((Function_Call called_addr fname msg_val) :: nil, env_before_call, nil, calling_contract)).
-  - apply declare_aexp. simpl. reflexivity.
-  -apply trans with (S' := (fn_code, called_fn_env, (env_before_call, calling_contract) :: nil, called_contract)).
-    *apply function_call.
-     {
-      reflexivity.
-     }
-     {
-      reflexivity.
-     }
-     {
-      reflexivity.
-     }
+  eapply trans.
+  - eapply declare_aexp; eauto.
+  - eapply trans.
+    * eapply function_call; eauto.
     * apply refl.
-  Qed.
+Qed.
 
 
 (** Old, needs change *)

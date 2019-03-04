@@ -1,8 +1,8 @@
 Require Import ZArith.
-Require Import String.
-
 Require Import List.
 
+Require Import String.
+Open Scope string_scope.
 
 (** Basic types *)
 
@@ -46,8 +46,8 @@ Inductive instr :=
 | IfThenElse : bexp -> list instr -> list instr -> instr
 | While : bexp -> list instr -> instr
 | Skip : instr
-| Function_Call : address -> string -> Z -> instr
-| Transfer : address_payable -> Z -> instr
+| Function_Call : address -> string -> aexp -> instr
+| Transfer : address_payable -> aexp -> instr
 (*| Balance : address -> instr *).
 
 
@@ -90,7 +90,7 @@ sender : address_payable
 }.
 
 Definition Default_Msg := {| value := 0%Z;
-                             sender := "x"%string |}.
+                             sender := "x" |}.
 
 
 (** Function scope *)
@@ -132,7 +132,7 @@ mkContractState {
  bexp_vars : Bexp_Env
 }.
 
-Definition Default_Address := "home"%string.
+Definition Default_Address := "home".
 
 Definition Default_ContractState := {| c_address := Default_Address;
                                        constructed := true;
@@ -168,8 +168,6 @@ Definition defineContract (env : ContractsEnv) (a : address) (c_state : Contract
   fun x => if (string_dec x a) then c_state
   else (env x). *)
 
-
-
 (* Let body := Body (Skip :: nil).
 Let emptyBody := EmptyBody.
 Let emptyFnEnv : Functions_Env := fun f => None.
@@ -178,11 +176,6 @@ Let fn_name : string := "foo".
 Let fun_env := defineFunction emptyFnEnv fn_name emptyBody.
 
 Compute getFunctionCode (fun_env "foo"%string). *)
-
-
-Definition declareAexp (ident : string) : Aexp_Env :=
-  fun x => if (string_dec x ident) then Some 0%Z
-           else None.
 
 Fixpoint declareAexpList (env : Aexp_Env) (ids : list string) : Aexp_Env :=
 fun x => match ids with
@@ -195,6 +188,14 @@ Definition updateAexp (env : Aexp_Env) (var : string) (val : Z) : Aexp_Env :=
   fun x => if (string_dec x var) then Some val
   else (env x).
 
+Definition unfoldOption {T} (opt : option T) (default : T) : T :=
+match opt with
+| Some v => v
+| _ => default
+end.
+
+Definition unfoldOptionZ := fun opt => unfoldOption opt 0%Z.
+Definition unfoldOptionBool := fun opt => unfoldOption opt false.
 
 Fixpoint evalaexp (env : Aexp_Env) (a : aexp) : option Z :=
   match a with
@@ -218,6 +219,23 @@ Fixpoint evalaexp (env : Aexp_Env) (a : aexp) : option Z :=
                  end
   end.
 
+Example unknown_id_evals_none:
+  evalaexp Empty_Aexp_Env (AId "a") = None.
+Proof.
+  reflexivity.
+Qed.
+
+Example zero_division:
+  evalaexp Empty_Aexp_Env (Div (Int 1) (Int 0)) = None.
+Proof.
+  reflexivity.
+Qed.
+
+Example zero_division_remainder:
+  evalaexp Empty_Aexp_Env (Rem (Int 1) (Int 0)) = None.
+Proof.
+  reflexivity.
+Qed.
 
 Definition declareBexp (ident : string) : Bexp_Env :=
   fun x => if (string_dec x ident) then Some false
@@ -265,18 +283,6 @@ Fixpoint evalbexp (aexp_env : Aexp_Env) (bexp_env : Bexp_Env) (b : bexp) : optio
                  end
   end.
 
-
-Definition unfoldOptionZ (opt_z : option Z) :=
-match opt_z with
-| Some v => v
-| _ => 0%Z
-end.
-
-Definition unfoldOptionBool (opt_bool : option bool) :=
-match opt_bool with
-| Some v => v
-| _ => false
-end.
 
 
 (* Let n := AId "n".
