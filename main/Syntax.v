@@ -47,8 +47,7 @@ Inductive instr :=
 | While : bexp -> list instr -> instr
 | Skip : instr
 | Function_Call : address -> string -> aexp -> instr
-| Transfer : address_payable -> aexp -> instr
-(*| Balance : address -> instr *).
+| Transfer : address_payable -> aexp -> instr.
 
 
 Inductive function_body :=
@@ -90,7 +89,7 @@ sender : address_payable
 }.
 
 Definition Default_Msg := {| value := 0%Z;
-                             sender := "x" |}.
+                             sender := "default_sender" |}.
 
 
 (** Function scope *)
@@ -126,16 +125,14 @@ fun (fenv : FunctionEnv) (new_msg : msg) => mkEnv (aexp_env fenv) (bexp_env fenv
 Record ContractState :=
 mkContractState {
  c_address : address;
- constructed : bool;
  fn_env : Functions_Env;
  aexp_vars : Aexp_Env;
  bexp_vars : Bexp_Env
 }.
 
-Definition Default_Address := "home".
+Definition Default_Address := "default_address".
 
 Definition Default_ContractState := {| c_address := Default_Address;
-                                       constructed := true;
                                        fn_env := Empty_Functions_Env;
                                        aexp_vars := Empty_Aexp_Env;
                                        bexp_vars := Empty_Bexp_Env |}.
@@ -162,6 +159,10 @@ Definition getFunctionCode (opt_body : option function_body) : Code :=
 
 Definition ContractsEnv := address -> ContractState.
 Definition Empty_ContractsEnv : ContractsEnv := fun x => Default_ContractState.
+Definition updateContractsEnv (env : ContractsEnv) (addr : address) (state : ContractState) : ContractsEnv :=
+  fun x => if (string_dec x addr) then state
+  else (env x).
+
 
 (*
 Definition defineContract (env : ContractsEnv) (a : address) (c_state : ContractState) : ContractsEnv :=
