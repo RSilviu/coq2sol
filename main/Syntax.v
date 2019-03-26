@@ -96,7 +96,6 @@ Definition Default_Msg := {| value := 0%Z;
 
 Record FunctionEnv :=
 mkEnv {
-(*  names : list string; *)
  aexp_env : Aexp_Env;
  bexp_env : Bexp_Env;
  next_code : Code;
@@ -163,20 +162,6 @@ Definition updateContractsEnv (env : ContractsEnv) (addr : address) (state : Con
   fun x => if (string_dec x addr) then state
   else (env x).
 
-
-(*
-Definition defineContract (env : ContractsEnv) (a : address) (c_state : ContractState) : ContractsEnv :=
-  fun x => if (string_dec x a) then c_state
-  else (env x). *)
-
-(* Let body := Body (Skip :: nil).
-Let emptyBody := EmptyBody.
-Let emptyFnEnv : Functions_Env := fun f => None.
-Let fn_name : string := "foo".
-
-Let fun_env := defineFunction emptyFnEnv fn_name emptyBody.
-
-Compute getFunctionCode (fun_env "foo"%string). *)
 
 Fixpoint declareAexpList (env : Aexp_Env) (ids : list string) : Aexp_Env :=
 fun x => match ids with
@@ -285,25 +270,3 @@ Fixpoint evalbexp (aexp_env : Aexp_Env) (bexp_env : Bexp_Env) (b : bexp) : optio
   end.
 
 
-
-(* Let n := AId "n".
-Let x := AId "x".
-
-Let x_decl := declareAexp "x" emptyEnv.
-
-Compute evalaexp x_decl x.
-
-Let vars := updateAexp x_decl "n" 10.
-
-Compute evalaexp vars n.
-Compute evalaexp vars x.
-
-Let new_vars := updateAexp vars "x" 1.
-
-Compute evalaexp new_vars x.
-
-Compute evalaexp vars n. *)
-
-(* Inductive DataType :=
-| int : DataType
-| bool : DataType. *)
