@@ -179,8 +179,26 @@ Proof.
   Qed.
 
 
+(** Code sample *)
 
-(** declare aexp in environment *)
+(*
+
+(Declare_Aexp "a" :: "b")::
+(Assignment_Aexp "a" (Int 1))::
+
+IfThenElse (Aexp_Gt (AId "a") (AId "b")) 
+  (Transfer "addr" (Int 20))::nil               (* if *)
+(Function_Call "addr" "send" (AId "b"))::nil  (* else *)
+
+::nil 
+
+*)
+
+
+
+
+
+
 
 
 
