@@ -40,8 +40,8 @@ Definition address_payable := string.
 (** Statements *)
 
 Inductive instr :=
-| Declare_Aexp : list string -> instr
-| Assignment_Aexp : string -> aexp -> instr
+| Declare_Aexp : list (string * option Z) -> instr
+| Assignment_Aexp : aexp -> aexp -> instr
 | Assignment_Bexp : string -> bexp -> instr
 | IfThenElse : bexp -> list instr -> list instr -> instr
 | While : bexp -> list instr -> instr
@@ -129,6 +129,11 @@ mkContractState {
  bexp_vars : Bexp_Env
 }.
 
+Definition replace_contract_aexp_env := 
+fun (cstate : ContractState) (new_env : Aexp_Env)
+ => mkContractState (c_address cstate) (fn_env cstate) new_env (bexp_vars cstate).
+
+
 Definition Default_Address := "default_address".
 
 Definition Default_ContractState := {| c_address := Default_Address;
@@ -163,107 +168,121 @@ Definition updateContractsEnv (env : ContractsEnv) (addr : address) (state : Con
   else (env x).
 
 
-Fixpoint declareAexpList (env : Aexp_Env) (ids : list string) : Aexp_Env :=
-fun x => match ids with
+Fixpoint declareAexpList (env : Aexp_Env) (decl_pairs : list (string * option Z)) : Aexp_Env :=
+fun x => match decl_pairs with
 | nil => env x
-| id :: rest => if (string_dec x id) then Some 0%Z
-           else declareAexpList env rest x
+| decl :: rest => if (string_dec x (fst decl)) then 
+                      match (snd decl) with
+                      | None => Some 0%Z
+                      | _ => (snd decl)
+                      end
+                  else declareAexpList env rest x
 end.
 
-Definition updateAexp (env : Aexp_Env) (var : string) (val : Z) : Aexp_Env :=
-  fun x => if (string_dec x var) then Some val
-  else (env x).
+Definition update_aexp (env : Aexp_Env) (var : option string) (val : Z) : Aexp_Env :=
+  fun x => match var with
+  | Some str => if (string_dec x str) then Some val
+                else (env x)
+  | _ => None
+  end.
 
-Definition unfoldOption {T} (opt : option T) (default : T) : T :=
+Definition unfold_option {T} (opt : option T) (default : T) : T :=
 match opt with
 | Some v => v
 | _ => default
 end.
 
-Definition unfoldOptionZ := fun opt => unfoldOption opt 0%Z.
-Definition unfoldOptionBool := fun opt => unfoldOption opt false.
+Definition unfold_aexp_id (e : aexp) : option string :=
+match e with
+| AId s => Some s
+| _ => None
+end.
 
-Fixpoint evalaexp (env : Aexp_Env) (a : aexp) : option Z :=
+
+Definition unfold_option_z := fun opt => unfold_option opt 0%Z.
+Definition unfold_option_bool := fun opt => unfold_option opt false.
+
+Fixpoint eval_aexp (env : Aexp_Env) (a : aexp) : option Z :=
   match a with
   | Int z => Some z
   | AId x => env x
-  | Plus a1 a2 => match (evalaexp env a1), (evalaexp env a2) with
+  | Plus a1 a2 => match (eval_aexp env a1), (eval_aexp env a2) with
                   | Some v1, Some v2 => Some (Z.add v1 v2)
                   | _, _ => None
                   end
-  | Mul a1 a2 => match (evalaexp env a1), (evalaexp env a2) with
+  | Mul a1 a2 => match (eval_aexp env a1), (eval_aexp env a2) with
                   | Some v1, Some v2 => Some (Z.mul v1 v2)
                   | _, _ => None
                   end
-  | Div a1 a2 => match (evalaexp env a1), (evalaexp env a2) with
+  | Div a1 a2 => match (eval_aexp env a1), (eval_aexp env a2) with
                  | Some v1, Some v2 => if (Z.eqb 0 v2) then None else Some (Z.div v1 v2)
                  | _, _ => None
                  end
-  | Rem a1 a2 => match (evalaexp env a1), (evalaexp env a2) with
+  | Rem a1 a2 => match (eval_aexp env a1), (eval_aexp env a2) with
                  | Some v1, Some v2 => if (Z.eqb 0 v2) then None else Some (Z.rem v1 v2)
                  | _, _ => None
                  end
   end.
 
 Example unknown_id_evals_none:
-  evalaexp Empty_Aexp_Env (AId "a") = None.
+  eval_aexp Empty_Aexp_Env (AId "a") = None.
 Proof.
   reflexivity.
 Qed.
 
 Example zero_division:
-  evalaexp Empty_Aexp_Env (Div (Int 1) (Int 0)) = None.
+  eval_aexp Empty_Aexp_Env (Div (Int 1) (Int 0)) = None.
 Proof.
   reflexivity.
 Qed.
 
 Example zero_division_remainder:
-  evalaexp Empty_Aexp_Env (Rem (Int 1) (Int 0)) = None.
+  eval_aexp Empty_Aexp_Env (Rem (Int 1) (Int 0)) = None.
 Proof.
   reflexivity.
 Qed.
 
-Definition declareBexp (ident : string) : Bexp_Env :=
+Definition declare_bexp (ident : string) : Bexp_Env :=
   fun x => if (string_dec x ident) then Some false
            else None.
 
-Definition updateBexp (env : Bexp_Env) (var : string) (val : bool) : Bexp_Env :=
+Definition update_bexp (env : Bexp_Env) (var : string) (val : bool) : Bexp_Env :=
   fun x => if (string_dec x var) then Some val
   else (env x).
 
-Fixpoint evalbexp (aexp_env : Aexp_Env) (bexp_env : Bexp_Env) (b : bexp) : option bool :=
+Fixpoint eval_bexp (aexp_env : Aexp_Env) (bexp_env : Bexp_Env) (b : bexp) : option bool :=
   match b with
   | Boolean b' => Some b'
   | BId x => bexp_env x
-  | Aexp_Lt a1 a2 => match (evalaexp aexp_env a1), (evalaexp aexp_env a2) with
+  | Aexp_Lt a1 a2 => match (eval_aexp aexp_env a1), (eval_aexp aexp_env a2) with
                     | Some v1, Some v2 => Some (Z.ltb v1 v2)
                     | _, _ => None
                     end
-  | Aexp_Leq a1 a2 => match (evalaexp aexp_env a1), (evalaexp aexp_env a2) with
+  | Aexp_Leq a1 a2 => match (eval_aexp aexp_env a1), (eval_aexp aexp_env a2) with
                     | Some v1, Some v2 => Some (Z.leb v1 v2)
                     | _, _ => None
                     end
-  | Aexp_Eq a1 a2 => match (evalaexp aexp_env a1), (evalaexp aexp_env a2) with
+  | Aexp_Eq a1 a2 => match (eval_aexp aexp_env a1), (eval_aexp aexp_env a2) with
                     | Some v1, Some v2 => Some (Z.eqb v1 v2)
                     | _, _ => None
                     end
-  | Aexp_Geq a1 a2 => match (evalaexp aexp_env a1), (evalaexp aexp_env a2) with
+  | Aexp_Geq a1 a2 => match (eval_aexp aexp_env a1), (eval_aexp aexp_env a2) with
                     | Some v1, Some v2 => Some (Z.geb v1 v2)
                     | _, _ => None
                      end
-  | Aexp_Gt a1 a2 => match (evalaexp aexp_env a1), (evalaexp aexp_env a2) with
+  | Aexp_Gt a1 a2 => match (eval_aexp aexp_env a1), (eval_aexp aexp_env a2) with
                     | Some v1, Some v2 => Some (Z.gtb v1 v2)
                     | _, _ => None
                     end
-  | Not b' => match (evalbexp aexp_env bexp_env b') with
+  | Not b' => match (eval_bexp aexp_env bexp_env b') with
               | Some b'' => Some (negb b'')
               | _ => None
               end
-  | And b1 b2 => match (evalbexp aexp_env bexp_env b1), (evalbexp aexp_env bexp_env b2) with
+  | And b1 b2 => match (eval_bexp aexp_env bexp_env b1), (eval_bexp aexp_env bexp_env b2) with
                  | Some b1', Some b2' => Some (andb b1' b2')
                  | _, _ => None
                  end
-  | Or b1 b2 => match (evalbexp aexp_env bexp_env b1), (evalbexp aexp_env bexp_env b2) with
+  | Or b1 b2 => match (eval_bexp aexp_env bexp_env b1), (eval_bexp aexp_env bexp_env b2) with
                  | Some b1', Some b2' => Some (orb b1' b2')
                  | _, _ => None
                  end
