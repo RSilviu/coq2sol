@@ -2,7 +2,11 @@ Require Import ZArith.
 Require Import List.
 
 Require Import String.
+
 Open Scope string_scope.
+
+(* TODO use modules, for balance, envs, etc *)
+
 
 (** Basic types *)
 
@@ -40,13 +44,14 @@ Definition address_payable := string.
 (** Statements *)
 
 Inductive instr :=
-| Declare_Aexp : list (string * option Z) -> instr
+| Declare_Aexp : list (string * option aexp) -> instr
 | Assignment_Aexp : aexp -> aexp -> instr
-| Assignment_Bexp : string -> bexp -> instr
+| Assignment_Bexp : string -> bexp -> instr (* TODO: replace string with bexp *)
 | IfThenElse : bexp -> list instr -> list instr -> instr
 | While : bexp -> list instr -> instr
 | Skip : instr
-| Function_Call : address -> string -> aexp -> instr
+(* no params, no return value, with value setter *)
+| Function_Call : option address -> string -> option aexp -> instr (* "this" "f" Some Int value *)
 | Transfer : address_payable -> aexp -> instr.
 
 
@@ -78,6 +83,7 @@ Definition Empty_BalanceMap : BalanceMap := fun a => 0%Z.
 
 Definition updateBalance (map : BalanceMap) (addr : address) (amount : Z) : address -> Z :=
 fun a' => if string_dec addr a' then amount else map a'.
+
 
 
 (** Message structure *)
@@ -167,14 +173,21 @@ Definition updateContractsEnv (env : ContractsEnv) (addr : address) (state : Con
   fun x => if (string_dec x addr) then state
   else (env x).
 
+Definition unfold_aexp_literal (e : aexp) : option Z :=
+match e with
+| Int z => Some z
+| _ => None
+end.
 
-Fixpoint declareAexpList (env : Aexp_Env) (decl_pairs : list (string * option Z)) : Aexp_Env :=
+Check unfold_aexp_literal.
+
+Fixpoint declareAexpList (env : Aexp_Env) (decl_pairs : list (string * option aexp)) : Aexp_Env :=
 fun x => match decl_pairs with
 | nil => env x
 | decl :: rest => if (string_dec x (fst decl)) then 
                       match (snd decl) with
-                      | None => Some 0%Z
-                      | _ => (snd decl)
+                      | None => unfold_aexp_literal Default_Aexp
+                      | Some v => unfold_aexp_literal v
                       end
                   else declareAexpList env rest x
 end.
@@ -186,11 +199,20 @@ Definition update_aexp (env : Aexp_Env) (var : option string) (val : Z) : Aexp_E
   | _ => None
   end.
 
+(* 
+Definition unfold_option {T1} {T2} (opt : option T1) (default : T2) (t1_to_t2 : T1 -> T2) : T2 :=
+match opt with
+| Some t1 => t1_to_t2 t1
+| _ => default
+end.
+ *)
+
 Definition unfold_option {T} (opt : option T) (default : T) : T :=
 match opt with
 | Some v => v
 | _ => default
 end.
+
 
 Definition unfold_aexp_id (e : aexp) : option string :=
 match e with
@@ -223,6 +245,14 @@ Fixpoint eval_aexp (env : Aexp_Env) (a : aexp) : option Z :=
                  | _, _ => None
                  end
   end.
+
+
+Definition unfold_opt_aexp (opt_aexp : option aexp) (env : Aexp_Env) : option Z :=
+match opt_aexp with
+| Some v => eval_aexp env v
+| _ => None
+end.
+
 
 Example unknown_id_evals_none:
   eval_aexp Empty_Aexp_Env (AId "a") = None.
@@ -287,5 +317,21 @@ Fixpoint eval_bexp (aexp_env : Aexp_Env) (bexp_env : Bexp_Env) (b : bexp) : opti
                  | _, _ => None
                  end
   end.
+
+
+Definition get_calling_contract (opt_addr : option address) (env : ContractsEnv) (current_contract : ContractState) :=
+match opt_addr with
+| Some v => env v
+| _ => current_contract
+end.
+
+
+
+
+
+
+
+
+
 
 
