@@ -6,6 +6,7 @@ Require Import main.Syntax.
 
 Open Scope string_scope.
 
+(* TODO use modules, for balance, envs, etc *)
 
 Definition EnvStack := list (FunctionEnv * ContractState).
 
@@ -29,10 +30,10 @@ Inductive step : ExecutionState -> ExecutionState -> Prop :=
 
 | function_call:
     forall called_addr msg_val value env env_stack c_st c_env c_st' fenv fcode fname rest,
-      c_st' = c_env called_addr ->
+      c_st' = get_calling_contract called_addr c_env c_st ->
       fcode = getFunctionCode ((fn_env c_st') fname) ->
-      value = unfold_option_z (eval_aexp (aexp_env env) msg_val) ->
-      fenv = mkEnv (Empty_Aexp_Env) (Empty_Bexp_Env) (rest) (balance_map env) (mkMsg value (c_address c_st)) ->
+      value = unfold_option_z (eval_aexp (aexp_env env) (unfold_option msg_val Default_Aexp)) ->
+      fenv = mkEnv (aexp_vars c_st') (bexp_vars c_st') (rest) (balance_map env) (mkMsg value (c_address c_st)) ->
       step ((Function_Call called_addr fname msg_val) :: rest, env, env_stack, c_st, c_env) (fcode, fenv, (env, c_st) :: env_stack, c_st', c_env)
 
 | function_exit:
@@ -44,7 +45,7 @@ Inductive step : ExecutionState -> ExecutionState -> Prop :=
     forall rest env env_stack c_st c_env,
       step (Skip :: rest, env, env_stack, c_st, c_env) (rest, env, env_stack, c_st, c_env)
 
-| declare_aexp:
+| declare_aexp: (* local to function *)
     forall aexp_env' aexp_names rest env env' env_stack c_st c_env,
       aexp_env' = declareAexpList (aexp_env env) aexp_names ->
       env' = mkEnv aexp_env' (bexp_env env) (next_code env) (balance_map env) (msg_data env) ->
@@ -146,8 +147,8 @@ Let example_contracts_env := updateContractsEnv Empty_ContractsEnv called_contra
 
 Let msg_val := Int 0.
 Let msg_val_z := 0%Z.
-Let current_vars : list (string * option Z) := [("a", None)].
-Let current_code := (Declare_Aexp current_vars) :: (Function_Call called_contract_address called_fn msg_val) :: nil.
+Let current_vars : list (string * option aexp) := [("a", None)].
+Let current_code := (Declare_Aexp current_vars) :: (Function_Call (Some called_contract_address) called_fn (Some msg_val)) :: nil.
 
 Let fn_env_before_call := (replace_aexp_env Empty_FunctionEnv (declareAexpList (aexp_env Empty_FunctionEnv) current_vars)).
 Let called_fn_env := replace_msg_data Empty_FunctionEnv (mkMsg  msg_val_z (c_address calling_contract_state)).
@@ -200,7 +201,7 @@ End function_exit.
 (** Contract and local variable *)
 Section contract_and_local_var.
 
-Let called_fn_code := [Declare_Aexp [("local_a", Some 100%Z)]; Assignment_Aexp (AId "contract_a") (AId "local_a")].
+Let called_fn_code := [Declare_Aexp [("local_a", Some (Int 100%Z))]; Assignment_Aexp (AId "contract_a") (AId "local_a")].
 Let called_fn := "called_fn".
 Let called_contract_funs_env := defineFunction Empty_Functions_Env called_fn (Body called_fn_code).
 Let called_contract_address := "called_contract".
@@ -242,6 +243,7 @@ Let fun_code_Alice := [Transfer address_Jane (Int 10%Z)].
 Let fun_name_Alice := "Alice_Fun".
 Let funs_env_Alice_contract := defineFunction Empty_Functions_Env fun_name_Alice (Body fun_code_Alice).
 
+Let 
 
 Example Tricky_Transfer:
 steps ()
