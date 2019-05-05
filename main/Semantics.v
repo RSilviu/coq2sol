@@ -1,96 +1,106 @@
-Require Import ZArith.
-Require Import String.
-Require Import List.
-
 Require Import main.Syntax.
+Open Scope list_scope.
+Import ListNotations.
 
-Open Scope string_scope.
 
-(* TODO use modules, for balance, envs, etc *)
+(**************************************************************)
+(** Transition configuration *)
 
 Definition EnvStack := list (FunctionEnv * ContractState).
 
-Definition ExecutionState : Type :=  Code * FunctionEnv * EnvStack * ContractState * ContractsEnv.
+Definition ExecutionState : Type :=  Code * FunctionEnv * EnvStack * ContractState * ContractsEnv * Balance_Env.
 
-Open Scope list_scope.
+
+(**************************************************************)
+(** Big Step Transitions *)
 
 Inductive step : ExecutionState -> ExecutionState -> Prop :=
 | transfer:
-    forall dest_addr amount value final_bm rest fenv env_stack c_st c_env new_bm src_addr old_bm,
+    forall dest_addr amount value final_bm rest fenv env_stack c_st c_env new_bm src_addr bm,
       src_addr = (c_address c_st) ->
-      old_bm = (balance_map fenv) ->
-      value = unfold_option_z (eval_aexp (aexp_env fenv) amount) ->
-      new_bm = (updateBalance old_bm dest_addr ((old_bm dest_addr) + value)) ->
-      final_bm = (updateBalance new_bm src_addr ((new_bm src_addr) - value)) ->
-      step (Transfer dest_addr amount :: rest, fenv, env_stack, c_st, c_env)
+      value = unfold_option_z (eval_aexp (aexp_env fenv) bm amount) ->
+      new_bm = (updateBalance bm dest_addr (unfold_option_z (bm dest_addr) + value)) ->
+      final_bm = (updateBalance new_bm src_addr (unfold_option_z (new_bm src_addr) - value)) ->
+      step (Transfer dest_addr amount :: rest, fenv, env_stack, c_st, c_env, bm)
            (rest,
-           mkEnv (aexp_env fenv) (bexp_env fenv) rest final_bm (msg_data fenv),
+           fenv,
            env_stack,
-           c_st, c_env)
+           c_st, c_env, final_bm)
 
 | function_call:
-    forall called_addr msg_val value env env_stack c_st c_env c_st' fenv fcode fname rest,
+    forall called_addr msg_val value env env_stack c_st c_env c_st' fenv fcode fname rest bm,
       c_st' = get_calling_contract called_addr c_env c_st ->
       fcode = getFunctionCode ((fn_env c_st') fname) ->
-      value = unfold_option_z (eval_aexp (aexp_env env) (unfold_option msg_val Default_Aexp)) ->
-      fenv = mkEnv (aexp_vars c_st') (bexp_vars c_st') (rest) (balance_map env) (mkMsg value (c_address c_st)) ->
-      step ((Function_Call called_addr fname msg_val) :: rest, env, env_stack, c_st, c_env) (fcode, fenv, (env, c_st) :: env_stack, c_st', c_env)
+      value = unfold_option_z (eval_aexp (aexp_env env) bm (unfold_option msg_val Default_Aexp)) ->
+      fenv = mkEnv (aexp_vars c_st') (bexp_vars c_st') (rest) (mkMsg value (c_address c_st)) ->
+      step ((Function_Call called_addr fname msg_val) :: rest, env, env_stack, c_st, c_env, bm) 
+           (fcode, fenv, (env, c_st) :: env_stack, c_st', c_env, bm)
 
 | function_exit:
-    forall (fenv fenv' : FunctionEnv) (c_st c_st' : ContractState) env_stack c_env,
-      step (nil, fenv, (fenv', c_st') :: env_stack, c_st, c_env)
-           (next_code fenv', fenv', env_stack, c_st', c_env)
+    forall (fenv fenv' : FunctionEnv) (c_st c_st' : ContractState) env_stack c_env bm,
+      step (nil, fenv, (fenv', c_st') :: env_stack, c_st, c_env, bm)
+           (next_code fenv', fenv', env_stack, c_st', c_env, bm)
 
 | skip:
-    forall rest env env_stack c_st c_env,
-      step (Skip :: rest, env, env_stack, c_st, c_env) (rest, env, env_stack, c_st, c_env)
+    forall rest env env_stack c_st c_env bm,
+      step (Skip :: rest, env, env_stack, c_st, c_env, bm) (rest, env, env_stack, c_st, c_env, bm)
 
 | declare_aexp: (* local to function *)
-    forall aexp_env' aexp_names rest env env' env_stack c_st c_env,
+    forall aexp_env' aexp_names rest env env' env_stack c_st c_env bm,
       aexp_env' = declareAexpList (aexp_env env) aexp_names ->
-      env' = mkEnv aexp_env' (bexp_env env) (next_code env) (balance_map env) (msg_data env) ->
-      step ((Declare_Aexp aexp_names) :: rest, env, env_stack, c_st, c_env) (rest, env', env_stack, c_st, c_env)
+      env' = mkEnv aexp_env' (bexp_env env) (next_code env) (msg_data env) ->
+      step ((Declare_Aexp aexp_names) :: rest, env, env_stack, c_st, c_env, bm) 
+            (rest, env', env_stack, c_st, c_env, bm)
 
 | assign_aexp_local : (* variable is local to function env *)
-    forall a x v aexp_env' rest env env' env_stack c_st c_env string_id,
+    forall a x v aexp_env' rest env env' env_stack c_st c_env string_id bm,
       string_id = unfold_aexp_id x ->
-      v = unfold_option_z (eval_aexp (aexp_env env) a) ->
+      v = unfold_option_z (eval_aexp (aexp_env env) bm a) ->
       aexp_env' = update_aexp (aexp_env env) string_id v ->
-      env' = mkEnv aexp_env' (bexp_env env) (next_code env) (balance_map env) (msg_data env) ->
-      step (Assignment_Aexp x a :: rest, env, env_stack, c_st, c_env) (rest, env', env_stack, c_st, c_env)
+      env' = mkEnv aexp_env' (bexp_env env) (next_code env) (msg_data env) ->
+      step (Assignment_Aexp x a :: rest, env, env_stack, c_st, c_env, bm) 
+           (rest, env', env_stack, c_st, c_env, bm)
 
 | assign_aexp_contract : (* variable is contract member *)
-    forall a x v contract_aexp_env local_aexp_env rest env env' env_stack c_st c_st' c_env string_id,
+    forall a x v contract_aexp_env local_aexp_env rest env env' env_stack c_st c_st' c_env string_id bm,
       string_id = unfold_aexp_id x ->
-      v = unfold_option_z (eval_aexp (aexp_env env) a) ->
+      v = unfold_option_z (eval_aexp (aexp_env env) bm a) ->
       local_aexp_env = update_aexp (aexp_env env) string_id v ->
       contract_aexp_env = update_aexp (aexp_vars c_st) string_id v ->
-      env' = mkEnv local_aexp_env (bexp_env env) (next_code env) (balance_map env) (msg_data env) ->
+      env' = mkEnv local_aexp_env (bexp_env env) (next_code env) (msg_data env) ->
       c_st' = replace_contract_aexp_env c_st contract_aexp_env ->
-      step (Assignment_Aexp x a :: rest, env, env_stack, c_st, c_env) (rest, env', env_stack, c_st', c_env)
+      step (Assignment_Aexp x a :: rest, env, env_stack, c_st, c_env, bm) 
+           (rest, env', env_stack, c_st', c_env, bm)
 
 | assign_bexp :
-    forall b x v bexp_env' rest env env' env_stack c_st c_env,
-      v = unfold_option_bool (eval_bexp (aexp_env env) (bexp_env env) b) ->
+    forall b x v bexp_env' rest env env' env_stack c_st c_env bm,
+      v = unfold_option_bool (eval_bexp (aexp_env env) bm (bexp_env env) b) ->
       bexp_env' = update_bexp (bexp_env env) x v ->
-      env' = mkEnv (aexp_env env) (bexp_env') (next_code env) (balance_map env) (msg_data env) ->
-      step (Assignment_Bexp x b :: rest, env, env_stack, c_st, c_env) (rest, env', env_stack, c_st, c_env)
+      env' = mkEnv (aexp_env env) (bexp_env') (next_code env) (msg_data env) ->
+      step (Assignment_Bexp x b :: rest, env, env_stack, c_st, c_env, bm) 
+           (rest, env', env_stack, c_st, c_env, bm)
 
 | if_true :
-    forall b s1 s2 rest env env_stack c_st c_env,
-      Some true = (eval_bexp (aexp_env env) (bexp_env env) b) ->
-      step (IfThenElse b s1 s2 :: rest, env, env_stack, c_st, c_env) (s1 ++ rest, env, env_stack, c_st, c_env)
+    forall b s1 s2 rest env env_stack c_st c_env bm,
+      Some true = (eval_bexp (aexp_env env) bm (bexp_env env) b) ->
+      step (IfThenElse b s1 s2 :: rest, env, env_stack, c_st, c_env, bm) 
+           (s1 ++ rest, env, env_stack, c_st, c_env, bm)
 
 | if_false :
-    forall b s1 s2 rest env env_stack c_st c_env,
-      Some false = (eval_bexp (aexp_env env) (bexp_env env) b) ->
-      step (IfThenElse b s1 s2 :: rest, env, env_stack, c_st, c_env) (s2 ++ rest, env, env_stack, c_st, c_env)
+    forall b s1 s2 rest env env_stack c_st c_env bm,
+      Some false = (eval_bexp (aexp_env env) bm (bexp_env env) b) ->
+      step (IfThenElse b s1 s2 :: rest, env, env_stack, c_st, c_env, bm)
+           (s2 ++ rest, env, env_stack, c_st, c_env, bm)
 
 | while:
-    forall (s : list instr) b rest env env_stack c_st c_env,
-      step (While b s :: rest, env, env_stack, c_st, c_env)
-           ((IfThenElse b (s ++ While b s :: nil) (Skip :: nil)) :: rest, env, env_stack, c_st, c_env)
+    forall (s : list instr) b rest env env_stack c_st c_env bm,
+      step (While b s :: rest, env, env_stack, c_st, c_env, bm)
+           ([IfThenElse b (s ++ (While b s :: rest)) rest], env, env_stack, c_st, c_env, bm)
 .
+
+
+(**************************************************************)
+(** Binary relations on steps *)
 
 Inductive steps : ExecutionState -> ExecutionState -> Prop :=
 | refl : forall S,
@@ -99,24 +109,25 @@ Inductive steps : ExecutionState -> ExecutionState -> Prop :=
     step S S' -> steps S' S'' -> steps S S''.
 
 
-(* Examples *)
+(**************************************************************)
+(** Proven examples of semantics *)
 
 
+(**************************************************************)
 (** address.transfer(amount) *)
+
 Section transfer.
 
 Let receiver := "addr".
-Let amount := Int 1.
-Let amount_z := 1%Z.
+Let amount_aexp := Int 1.
+Let amount_z := 1.
 
 Let example_contracts_env := Empty_ContractsEnv.
+Let new_balances := (updateBalance (updateBalance Empty_BalanceEnv receiver amount_z) (c_address Default_ContractState) (-amount_z)).
 
 Example transfer_ex:
-  steps (Transfer receiver amount :: nil, Empty_FunctionEnv, nil, Default_ContractState, example_contracts_env)
-        (nil, replace_bmap Empty_FunctionEnv 
-        (updateBalance (updateBalance Empty_BalanceMap receiver amount_z) 
-        (c_address Default_ContractState) (-amount_z)), nil, Default_ContractState, example_contracts_env)
-  .
+  steps (Transfer receiver amount_aexp :: nil, Empty_FunctionEnv, nil, Default_ContractState, example_contracts_env, Empty_BalanceEnv)
+        (nil, Empty_FunctionEnv, nil, Default_ContractState, example_contracts_env, new_balances).
 Proof.
   eapply trans.
   {
@@ -129,10 +140,10 @@ Proof.
 
 End transfer.
 
-Import ListNotations.
 
-
+(**************************************************************)
 (** function call *)
+
 Section function_call.
 
 Let called_fn_code := [Declare_Aexp [("fn_a", None)]].
@@ -146,7 +157,7 @@ Let calling_contract_state := Default_ContractState.
 Let example_contracts_env := updateContractsEnv Empty_ContractsEnv called_contract_address called_contract_state.
 
 Let msg_val := Int 0.
-Let msg_val_z := 0%Z.
+Let msg_val_z := 0.
 Let current_vars : list (string * option aexp) := [("a", None)].
 Let current_code := (Declare_Aexp current_vars) :: (Function_Call (Some called_contract_address) called_fn (Some msg_val)) :: nil.
 
@@ -154,8 +165,9 @@ Let fn_env_before_call := (replace_aexp_env Empty_FunctionEnv (declareAexpList (
 Let called_fn_env := replace_msg_data Empty_FunctionEnv (mkMsg  msg_val_z (c_address calling_contract_state)).
 
 Example Step_Into_Call :
-  steps (current_code, Empty_FunctionEnv, nil, calling_contract_state, example_contracts_env)
-        (called_fn_code, called_fn_env, (fn_env_before_call, calling_contract_state) :: nil, called_contract_state, example_contracts_env).
+  steps (current_code, Empty_FunctionEnv, nil, calling_contract_state, example_contracts_env, Empty_BalanceEnv)
+        (called_fn_code, called_fn_env, (fn_env_before_call, calling_contract_state) :: nil,
+         called_contract_state, example_contracts_env, Empty_BalanceEnv).
 Proof.
   eapply trans.
   - eapply declare_aexp; eauto.
@@ -167,7 +179,9 @@ Qed.
 End function_call.
 
 
+(**************************************************************)
 (** function exit *)
+
 Section function_exit.
 
 Let fenv_with_remaining_code := replace_next_code Empty_FunctionEnv (Skip :: nil).
@@ -182,9 +196,9 @@ Default_Address calling_contract_state.
 
 Example Function_exit:
   steps (nil, Empty_FunctionEnv, (fenv_with_remaining_code, calling_contract_state)::nil,
-  called_contract_state, example_contracts_env)
+  called_contract_state, example_contracts_env, Empty_BalanceEnv)
   (next_code fenv_with_remaining_code, fenv_with_remaining_code, nil,
-   calling_contract_state, example_contracts_env).
+   calling_contract_state, example_contracts_env, Empty_BalanceEnv).
 Proof.
   eapply trans.
   {
@@ -198,10 +212,12 @@ Proof.
 End function_exit.
 
 
-(** Contract and local variable *)
+(**************************************************************)
+(** Contract and local variables *)
+
 Section contract_and_local_var.
 
-Let called_fn_code := [Declare_Aexp [("local_a", Some (Int 100%Z))]; Assignment_Aexp (AId "contract_a") (AId "local_a")].
+Let called_fn_code := [Declare_Aexp [("local_a", Some (Int 100))]; Assignment_Aexp (AId "contract_a") (AId "local_a")].
 Let called_fn := "called_fn".
 Let called_contract_funs_env := defineFunction Empty_Functions_Env called_fn (Body called_fn_code).
 Let called_contract_address := "called_contract".
@@ -209,14 +225,14 @@ Let contract_aexp_env := declareAexpList Empty_Aexp_Env [("contract_a", None)].
 Let called_contract_state := 
 mkContractState called_contract_address called_contract_funs_env contract_aexp_env Empty_Bexp_Env.
 Let final_contract_state :=
-replace_contract_aexp_env called_contract_state (update_aexp contract_aexp_env (Some "contract_a") 100%Z).
+replace_contract_aexp_env called_contract_state (update_aexp contract_aexp_env (Some "contract_a") 100).
 Let initial_fn_env := replace_aexp_env Empty_FunctionEnv contract_aexp_env.
 Let final_fn_env := 
-replace_aexp_env initial_fn_env (update_aexp (update_aexp contract_aexp_env (Some "local_a") 100%Z) (Some "contract_a") 100%Z).
+replace_aexp_env initial_fn_env (update_aexp (update_aexp contract_aexp_env (Some "local_a") 100) (Some "contract_a") 100).
 
 Example contract_and_local_var:
-steps (called_fn_code, initial_fn_env, [], called_contract_state, Empty_ContractsEnv)
-      ([], final_fn_env, [], final_contract_state, Empty_ContractsEnv).
+steps (called_fn_code, initial_fn_env, [], called_contract_state, Empty_ContractsEnv, Empty_BalanceEnv)
+      ([], final_fn_env, [], final_contract_state, Empty_ContractsEnv, Empty_BalanceEnv).
 Proof.
   eapply trans.
   {
@@ -230,38 +246,55 @@ Qed.
 End contract_and_local_var.
 
 
-(** Code sample *)
-Section tricky_transfer.
+(**************************************************************)
+(** More advanced *)
+(** 
+  * [WARNING] Default address is used instead of expected sender address when sending contract state is not set.
+  *
+  *)
 
-Let address_Alice := "0xA".
-Let balance_map_Alice := updateBalance Empty_BalanceMap address_Alice 10%Z. 
+Section looped_transfer.
 
-Let address_Jane := "0xF".
-Let balance_map_Jane := updateBalance Empty_BalanceMap address_Jane 20%Z. 
+Let address_Alice := "alice".
+Let address_Jane := "jane".
 
-Let fun_code_Alice := [Transfer address_Jane (Int 10%Z)].
+Let initial_balances := updateBalance (updateBalance Empty_BalanceEnv address_Jane 0) address_Alice 2.
+Let final_balances := updateBalance (updateBalance initial_balances address_Jane 1) address_Alice 1.
+
+Let fun_code_Alice := [While (Aexp_Gt (BalanceOf address_Alice) (BalanceOf address_Jane)) [Transfer address_Jane (Int 1)]].
 Let fun_name_Alice := "Alice_Fun".
-Let funs_env_Alice_contract := defineFunction Empty_Functions_Env fun_name_Alice (Body fun_code_Alice).
+Let funs_env_Alice := defineFunction Empty_Functions_Env fun_name_Alice (Body fun_code_Alice).
 
-Let 
+Let contract_Alice := mkContractState address_Alice funs_env_Alice Empty_Aexp_Env Empty_Bexp_Env.
 
-Example Tricky_Transfer:
-steps ()
-().
+Example Looped_Transfer:
+steps (fun_code_Alice, Empty_FunctionEnv, [], contract_Alice, Empty_ContractsEnv, initial_balances)
+      ([], Empty_FunctionEnv, [], contract_Alice, Empty_ContractsEnv, final_balances).
 Proof.
+  eapply trans.
+  {
+    eapply while; eauto.
+  }
+  eapply trans.
+  {  
+    eapply if_true; eauto.
+  }
+  eapply trans.
+  {
+    eapply transfer; eauto.
+  }
+  eapply trans.
+  {
+    eapply while; eauto.
+  }
+  eapply trans.
+  {  
+    eapply if_false; eauto.
+  }
+  apply refl.
+Qed.
 
-End tricky_transfer.
-
-(*
-(Declare_Aexp "a" :: "b")::
-(Assignment_Aexp "a" (Int 1))::
-
-IfThenElse (Aexp_Gt (AId "a") (AId "b")) 
-  (Transfer "addr" (Int 20))::nil               (* if *)
-(Function_Call "addr" "send" (AId "b"))::nil  (* else *)
-
-::nil 
-*)
+End looped_transfer.
 
 
 
