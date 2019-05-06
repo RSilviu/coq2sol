@@ -38,6 +38,7 @@ Inductive aexp :=
 
 Definition Default_Aexp := Int 0.
 
+
 (**************************************************************)
 (** Bool *)
 
@@ -176,6 +177,8 @@ fun (fenv : FunctionEnv) (new_msg : msg) => mkEnv (aexp_env fenv) (bexp_env fenv
 
 
 (** Contract state *)
+
+(** Contract scope *)
 
 Record ContractState :=
 mkContractState {
