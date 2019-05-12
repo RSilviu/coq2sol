@@ -74,8 +74,9 @@ Definition Default_Msg := {| value := 0;
 
 Inductive instr :=
 | Declare_Aexp : list (string * option aexp) -> instr
+| Declare_Bexp : list (string * option bexp) -> instr
 | Assignment_Aexp : aexp -> aexp -> instr
-| Assignment_Bexp : string -> bexp -> instr (* TODO: replace string with bexp *)
+| Assignment_Bexp : bexp -> bexp -> instr
 | IfThenElse : bexp -> list instr -> list instr -> instr
 | While : bexp -> list instr -> instr
 | Skip : instr
@@ -108,13 +109,12 @@ Definition update_aexp (env : Aexp_Env) (var : option string) (val : Z) : Aexp_E
 Definition Bexp_Env := Env string bool.
 Definition Empty_Bexp_Env : Bexp_Env := fun x => None.
 
-Definition declare_bexp (ident : string) : Bexp_Env :=
-  fun x => if (string_dec x ident) then Some false
-           else None.
-
-Definition update_bexp (env : Bexp_Env) (var : string) (val : bool) : Bexp_Env :=
-  fun x => if (string_dec x var) then Some val
-  else (env x).
+Definition update_bexp (env : Bexp_Env) (var : option string) (val : bool) : Bexp_Env :=
+  fun x => match var with
+  | Some str => if (string_dec x str) then Some val
+                else (env x)
+  | _ => None
+  end.
 
 
 (** contract functions *)
@@ -178,8 +178,6 @@ fun (fenv : FunctionEnv) (new_msg : msg) => mkEnv (aexp_env fenv) (bexp_env fenv
 
 (** Contract state *)
 
-(** Contract scope *)
-
 Record ContractState :=
 mkContractState {
  c_address : address;
@@ -192,6 +190,9 @@ Definition replace_contract_aexp_env :=
 fun (cstate : ContractState) (new_env : Aexp_Env)
  => mkContractState (c_address cstate) (fn_env cstate) new_env (bexp_vars cstate).
 
+Definition replace_contract_bexp_env := 
+fun (cstate : ContractState) (new_env : Bexp_Env)
+ => mkContractState (c_address cstate) (fn_env cstate) (aexp_vars cstate) new_env.
 
 Definition Default_ContractState := {| c_address := Default_Address;
                                        fn_env := Empty_Functions_Env;
@@ -241,10 +242,15 @@ Definition unfold_option_bool := fun opt => unfold_option opt false.
 
 Definition unfold_aexp_literal (e : aexp) : option Z :=
 match e with
-| Int z => Some z
+| Int v => Some v
 | _ => None
 end.
 
+Definition unfold_bexp_literal (e : bexp) : option bool :=
+match e with
+| Boolean v => Some v
+| _ => None
+end.
 
 Definition unfold_aexp_id (e : aexp) : option string :=
 match e with
@@ -252,9 +258,15 @@ match e with
 | _ => None
 end.
 
+Definition unfold_bexp_id (e : bexp) : option string :=
+match e with
+| BId s => Some s
+| _ => None
+end.
+
 
 (**************************************************************)
-(** Declaration of aexp *)
+(** Declaration helpers *)
 
 Fixpoint declareAexpList (env : Aexp_Env) (decl_pairs : list (string * option aexp)) : Aexp_Env :=
 fun x => match decl_pairs with
@@ -265,6 +277,17 @@ fun x => match decl_pairs with
                       | Some v => unfold_aexp_literal v
                       end
                   else declareAexpList env rest x
+end.
+
+Fixpoint declareBexpList (env : Bexp_Env) (decl_pairs : list (string * option bexp)) : Bexp_Env :=
+fun x => match decl_pairs with
+| nil => env x
+| decl :: rest => if (string_dec x (fst decl)) then 
+                      match (snd decl) with
+                      | None => unfold_bexp_literal Default_Bexp
+                      | Some v => unfold_bexp_literal v
+                      end
+                  else declareBexpList env rest x
 end.
 
 

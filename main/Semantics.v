@@ -45,14 +45,23 @@ Inductive step : ExecutionState -> ExecutionState -> Prop :=
     forall rest env env_stack c_st c_env bm,
       step (Skip :: rest, env, env_stack, c_st, c_env, bm) (rest, env, env_stack, c_st, c_env, bm)
 
-| declare_aexp: (* local to function *)
+(** aexp declaration and assignment *)
+
+| declare_aexp_local:
     forall aexp_env' aexp_names rest env env' env_stack c_st c_env bm,
       aexp_env' = declareAexpList (aexp_env env) aexp_names ->
       env' = mkEnv aexp_env' (bexp_env env) (next_code env) (msg_data env) ->
       step ((Declare_Aexp aexp_names) :: rest, env, env_stack, c_st, c_env, bm) 
             (rest, env', env_stack, c_st, c_env, bm)
 
-| assign_aexp_local : (* variable is local to function env *)
+| declare_aexp_contract:
+    forall aexp_env' aexp_names rest env env_stack c_st c_st' c_env bm,
+      aexp_env' = declareAexpList (aexp_vars c_st) aexp_names ->
+      c_st' = replace_contract_aexp_env c_st aexp_env' ->
+      step ((Declare_Aexp aexp_names) :: rest, env, env_stack, c_st, c_env, bm) 
+            (rest, env, env_stack, c_st', c_env, bm)
+
+| assign_aexp_local :
     forall a x v aexp_env' rest env env' env_stack c_st c_env string_id bm,
       string_id = unfold_aexp_id x ->
       v = unfold_option_z (eval_aexp (aexp_env env) bm a) ->
@@ -61,7 +70,7 @@ Inductive step : ExecutionState -> ExecutionState -> Prop :=
       step (Assignment_Aexp x a :: rest, env, env_stack, c_st, c_env, bm) 
            (rest, env', env_stack, c_st, c_env, bm)
 
-| assign_aexp_contract : (* variable is contract member *)
+| assign_aexp_contract :
     forall a x v contract_aexp_env local_aexp_env rest env env' env_stack c_st c_st' c_env string_id bm,
       string_id = unfold_aexp_id x ->
       v = unfold_option_z (eval_aexp (aexp_env env) bm a) ->
@@ -72,13 +81,43 @@ Inductive step : ExecutionState -> ExecutionState -> Prop :=
       step (Assignment_Aexp x a :: rest, env, env_stack, c_st, c_env, bm) 
            (rest, env', env_stack, c_st', c_env, bm)
 
-| assign_bexp :
-    forall b x v bexp_env' rest env env' env_stack c_st c_env bm,
+(** bexp declaration and assignment *)
+
+| declare_bexp_local:
+    forall bexp_env' bexp_names rest env env' env_stack c_st c_env bm,
+      bexp_env' = declareBexpList (bexp_env env) bexp_names ->
+      env' = mkEnv (aexp_env env) bexp_env' (next_code env) (msg_data env) ->
+      step ((Declare_Bexp bexp_names) :: rest, env, env_stack, c_st, c_env, bm) 
+            (rest, env', env_stack, c_st, c_env, bm)
+
+| declare_bexp_contract:
+    forall bexp_env' bexp_names rest env env_stack c_st c_st' c_env bm,
+      bexp_env' = declareBexpList (bexp_vars c_st) bexp_names ->
+      c_st' = replace_contract_bexp_env c_st bexp_env' ->
+      step ((Declare_Bexp bexp_names) :: rest, env, env_stack, c_st, c_env, bm) 
+            (rest, env, env_stack, c_st', c_env, bm)
+
+| assign_bexp_local :
+    forall b x v bexp_env' rest env env' env_stack c_st c_env bm string_id,
+      string_id = unfold_bexp_id x ->
       v = unfold_option_bool (eval_bexp (aexp_env env) bm (bexp_env env) b) ->
-      bexp_env' = update_bexp (bexp_env env) x v ->
+      bexp_env' = update_bexp (bexp_env env) string_id v ->
       env' = mkEnv (aexp_env env) (bexp_env') (next_code env) (msg_data env) ->
       step (Assignment_Bexp x b :: rest, env, env_stack, c_st, c_env, bm) 
            (rest, env', env_stack, c_st, c_env, bm)
+
+| assign_bexp_contract :
+    forall b x string_id v contract_bexp_env local_bexp_env rest env env' env_stack c_st c_st' c_env bm,
+      string_id = unfold_bexp_id x ->
+      v = unfold_option_bool (eval_bexp (aexp_env env) bm (bexp_env env) b) ->
+      local_bexp_env = update_bexp (bexp_env env) string_id v ->
+      contract_bexp_env = update_bexp (bexp_vars c_st) string_id v ->
+      env' = mkEnv (aexp_env env) local_bexp_env (next_code env) (msg_data env) ->
+      c_st' = replace_contract_bexp_env c_st contract_bexp_env ->
+      step (Assignment_Bexp x b :: rest, env, env_stack, c_st, c_env, bm) 
+           (rest, env', env_stack, c_st', c_env, bm)
+
+(** if *)
 
 | if_true :
     forall b s1 s2 rest env env_stack c_st c_env bm,
@@ -91,6 +130,8 @@ Inductive step : ExecutionState -> ExecutionState -> Prop :=
       Some false = (eval_bexp (aexp_env env) bm (bexp_env env) b) ->
       step (IfThenElse b s1 s2 :: rest, env, env_stack, c_st, c_env, bm)
            (s2 ++ rest, env, env_stack, c_st, c_env, bm)
+
+(** while *)
 
 | while:
     forall (s : list instr) b rest env env_stack c_st c_env bm,
@@ -170,7 +211,7 @@ Example Step_Into_Call :
          called_contract_state, example_contracts_env, Empty_BalanceEnv).
 Proof.
   eapply trans.
-  - eapply declare_aexp; eauto.
+  - eapply declare_aexp_local; eauto.
   - eapply trans.
     * eapply function_call; eauto.
     * apply refl.
@@ -236,7 +277,7 @@ steps (called_fn_code, initial_fn_env, [], called_contract_state, Empty_Contract
 Proof.
   eapply trans.
   {
-    eapply declare_aexp; eauto.
+    eapply declare_aexp_local; eauto.
   }
   eapply trans.
   eapply assign_aexp_contract; eauto.
