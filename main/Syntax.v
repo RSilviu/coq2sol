@@ -5,6 +5,7 @@ Require Export List.
 Open Scope string_scope.
 Open Scope Z_scope.
 
+Import ListNotations.
 
 (**************************************************************)
 (** Solidity address *)
@@ -31,6 +32,7 @@ Inductive aexp :=
 | Int : Z -> aexp
 | AId : string -> aexp
 | Plus : aexp -> aexp -> aexp
+| Sub : aexp -> aexp -> aexp
 | Mul : aexp -> aexp -> aexp
 | Div : aexp -> aexp -> aexp
 | Rem : aexp -> aexp -> aexp
@@ -48,6 +50,7 @@ Inductive bexp :=
 | Aexp_Lt : aexp -> aexp -> bexp
 | Aexp_Leq : aexp -> aexp -> bexp
 | Aexp_Eq : aexp -> aexp -> bexp
+| Aexp_Neq : aexp -> aexp -> bexp
 | Aexp_Geq : aexp -> aexp -> bexp
 | Aexp_Gt : aexp -> aexp -> bexp
 | Not : bexp -> bexp
@@ -73,16 +76,44 @@ Definition Default_Msg := {| value := 0;
 (** Statements *)
 
 Inductive instr :=
-| Declare_Aexp : list (string * option aexp) -> instr
-| Declare_Bexp : list (string * option bexp) -> instr
-| Assignment_Aexp : aexp -> aexp -> instr
-| Assignment_Bexp : bexp -> bexp -> instr
+| Declare_Aexp : string -> instr
+| Declare_Bexp : string -> instr
+
+| Define_Aexp : (string * aexp) -> instr
+| Define_Bexp : (string * bexp) -> instr
+
+| Assign_Aexp : aexp -> aexp -> instr
+| Assign_Bexp : bexp -> bexp -> instr
+
 | IfThenElse : bexp -> list instr -> list instr -> instr
 | While : bexp -> list instr -> instr
 | Skip : instr
+
 (* no params, no return value, with value setter *)
-| Function_Call : option address -> string -> option aexp -> instr (* "this" "f" Some Int value *)
-| Transfer : address_payable -> aexp -> instr.
+| Function_Call : option address -> string -> option aexp -> instr (* example: "this" "f" Some Int value *)
+| Transfer : address_payable -> aexp -> instr
+
+| Revert : option string -> instr
+| Require : bexp -> option string -> instr.
+
+
+
+
+Inductive contract_part :=
+| Define_Function : string -> list instr -> contract_part
+
+| Declare_Aexp_Field : string -> contract_part
+| Declare_Bexp_Field : string -> contract_part
+
+| Define_Aexp_Field : (string * aexp) -> contract_part
+| Define_Bexp_Field : (string * bexp) -> contract_part.
+
+
+Definition contract_parts := list contract_part.
+
+
+(* Notation "'uint' id = v" := (Declare_Aexp (id, Some (Int v)) :: rest)
+  (at level 200). *)
 
 
 (**************************************************************)
@@ -178,13 +209,34 @@ fun (fenv : FunctionEnv) (new_msg : msg) => mkEnv (aexp_env fenv) (bexp_env fenv
 
 (** Contract state *)
 
+(**
+  * Introducing contract type.
+  
+ Definition Contract_Vars := string -> ContractState.
+
+Definition Empty_Contract_Vars : Contract_Vars := fun x => Default_ContractState.
+
+Definition updateContract_Vars (env : Contract_Vars) (name : string) (state : ContractState) : Contract_Vars :=
+  fun x => if (string_dec x name) then state
+  else (env x).
+
+Inductive Contract_Vars := 
+| contract_vars : string -> ContractState -> 
+with ContractState :=
+| ctor (c_address : address) (fn_env : Functions_Env)
+       (aexp_vars : Aexp_Env) (bexp_vars : Bexp_Env) (contract_vars : Contract_Vars)
+.
+ *)
+
 Record ContractState :=
 mkContractState {
  c_address : address;
  fn_env : Functions_Env;
  aexp_vars : Aexp_Env;
  bexp_vars : Bexp_Env
+(*  contract_vars : Contract_Vars *)
 }.
+
 
 Definition replace_contract_aexp_env := 
 fun (cstate : ContractState) (new_env : Aexp_Env)
@@ -193,6 +245,11 @@ fun (cstate : ContractState) (new_env : Aexp_Env)
 Definition replace_contract_bexp_env := 
 fun (cstate : ContractState) (new_env : Bexp_Env)
  => mkContractState (c_address cstate) (fn_env cstate) (aexp_vars cstate) new_env.
+
+Definition replace_contract_fn_env := 
+fun (cstate : ContractState) (new_env : Functions_Env)
+ => mkContractState (c_address cstate) new_env (aexp_vars cstate) (bexp_vars cstate).
+
 
 Definition Default_ContractState := {| c_address := Default_Address;
                                        fn_env := Empty_Functions_Env;
@@ -268,26 +325,42 @@ end.
 (**************************************************************)
 (** Declaration helpers *)
 
-Fixpoint declareAexpList (env : Aexp_Env) (decl_pairs : list (string * option aexp)) : Aexp_Env :=
-fun x => match decl_pairs with
-| nil => env x
-| decl :: rest => if (string_dec x (fst decl)) then 
-                      match (snd decl) with
-                      | None => unfold_aexp_literal Default_Aexp
-                      | Some v => unfold_aexp_literal v
-                      end
-                  else declareAexpList env rest x
+Definition declareAexp (env : Aexp_Env) (name : string) : Aexp_Env :=
+fun x => if (string_dec x name) then unfold_aexp_literal Default_Aexp
+         else env x.
+
+(** [TEST] declareAexp *)
+
+Let env := update_aexp Empty_Aexp_Env (Some "x") 1.
+Compute (declareAexp env "y") "x".
+
+(***************************)
+
+Definition defineAexp (env : Aexp_Env) (def : string * aexp) : Aexp_Env :=
+fun x => match def with
+| (id, Int v) => if (string_dec x id) then Some v
+                 else env x
+| (_, _) => env x
 end.
 
-Fixpoint declareBexpList (env : Bexp_Env) (decl_pairs : list (string * option bexp)) : Bexp_Env :=
-fun x => match decl_pairs with
-| nil => env x
-| decl :: rest => if (string_dec x (fst decl)) then 
-                      match (snd decl) with
-                      | None => unfold_bexp_literal Default_Bexp
-                      | Some v => unfold_bexp_literal v
-                      end
-                  else declareBexpList env rest x
+(** [TEST] defineAexp *)
+
+Let env1 := update_aexp Empty_Aexp_Env (Some "x") 1.
+Compute (defineAexp env1 ("z", Int 33)) "z".
+Compute (defineAexp env1 ("z", AId "x")) "z".
+
+(***************************)
+
+
+Definition declareBexp (env : Bexp_Env) (name : string) : Bexp_Env :=
+fun x => if (string_dec x name) then unfold_bexp_literal Default_Bexp
+         else env x.
+
+Definition defineBexp (env : Bexp_Env) (def : string * bexp) : Bexp_Env :=
+fun x => match def with
+| (id, Boolean v) => if (string_dec x id) then Some v
+                 else env x
+| (_, _) => env x
 end.
 
 
@@ -303,6 +376,10 @@ Fixpoint eval_aexp (env : Aexp_Env) (bm : Balance_Env) (a : aexp) : option Z :=
   | BalanceOf x => bm x
   | Plus a1 a2 => match (eval_aexp env bm a1), (eval_aexp env bm a2) with
                   | Some v1, Some v2 => Some (Z.add v1 v2)
+                  | _, _ => None
+                  end
+  | Sub a1 a2 => match (eval_aexp env bm a1), (eval_aexp env bm a2) with
+                  | Some v1, Some v2 => Some (Z.sub v1 v2)
                   | _, _ => None
                   end
   | Mul a1 a2 => match (eval_aexp env bm a1), (eval_aexp env bm a2) with
@@ -328,6 +405,12 @@ end.
 
 
 (** * Some proof examples *)
+
+Example mixed_aexp_ops:
+  eval_aexp Empty_Aexp_Env Empty_BalanceEnv (Plus (Int 1) (Div (Int 4) (Int 2))) = Some 3.
+Proof.
+  reflexivity.
+Qed.
 
 Example unknown_id_evals_none:
   eval_aexp Empty_Aexp_Env Empty_BalanceEnv (AId "a") = None.
@@ -364,6 +447,10 @@ Fixpoint eval_bexp (aexp_env : Aexp_Env) (bm : Balance_Env) (bexp_env : Bexp_Env
                     end
   | Aexp_Eq a1 a2 => match (eval_aexp aexp_env bm a1), (eval_aexp aexp_env bm a2) with
                     | Some v1, Some v2 => Some (Z.eqb v1 v2)
+                    | _, _ => None
+                    end
+  | Aexp_Neq a1 a2 => match (eval_aexp aexp_env bm a1), (eval_aexp aexp_env bm a2) with
+                    | Some v1, Some v2 => Some (Zneq_bool v1 v2)
                     | _, _ => None
                     end
   | Aexp_Geq a1 a2 => match (eval_aexp aexp_env bm a1), (eval_aexp aexp_env bm a2) with
