@@ -13,6 +13,12 @@ Definition EnvStack := list (FunctionEnv * ContractState).
 Definition ExecutionState : Type :=  Code * FunctionEnv * EnvStack * ContractState * ContractsEnv * Balance_Env.
 Definition CompileState : Type :=  contract_parts * ContractState.
 
+(* Inductive test_step : CompileState -> CompileState :=
+| 
+.
+
+Definition agg (state : CompileState) (states : list CompileState) := state :: states.
+ *)
 Inductive compile_step : CompileState -> CompileState -> Prop :=
 | function_definition:
     forall name body rest c_st c_st',
@@ -57,27 +63,6 @@ Check function_definition "TEST" [] [] Default_ContractState Default_ContractSta
     Definition CompileState : Type :=  contract_parts * ContractState.
 *)
 
-Let contract := [Declare_Aexp_Field "token";
-                 Define_Function "transfer" [Define_Aexp ("amount", Int 10) ; Transfer "receiver" (AId "amount")]]
-                 .
-
-(* Fixpoint parse_contract (parts : contract_parts) (c_st : ContractState) : list compile_step := 
-match parts with
-| part :: rest => match part with 
-                  | Define_Function name body => function_definition name body rest c_st c_st' :: parse_contract rest c_st'
-(*                   | Declare_Aexp_Fields names => 
-                  | Declare_Bexp_Fields names =>
-                  | Define_Aexp_Field (name, value)
-                  | Define_Bexp_Field (name, value) *)
-                  end
-| _ => []
-end.
- *)
-(* create a contract from Coq compile state *)
-
-(* add defined contract to Ethereum contracts, i.e. to ContractsEnv *)
-
-(* prepare contract for running *)
 
 (**************************************************************)
 (** Big Step Transitions *)
@@ -231,6 +216,36 @@ Inductive run_steps : ExecutionState -> ExecutionState -> Prop :=
 | run_trans: forall S S' S'',
     run_step S S' -> run_steps S' S'' -> run_steps S S''.
 
+
+Section compile_step_examples.
+
+Let contract := [Declare_Aexp_Field "token";
+                 Define_Function "transfer" [Define_Aexp ("amount", Int 10) ; Transfer "receiver" (AId "amount")]]
+                 .
+
+(* Example one: compile_steps 
+ *)
+
+
+(* Fixpoint parse_contract (parts : contract_parts) (c_st : ContractState) : list compile_step := 
+match parts with
+| part :: rest => match part with 
+                  | Define_Function name body => function_definition name body rest c_st c_st' :: parse_contract rest c_st'
+(*                   | Declare_Aexp_Fields names => 
+                  | Declare_Bexp_Fields names =>
+                  | Define_Aexp_Field (name, value)
+                  | Define_Bexp_Field (name, value) *)
+                  end
+| _ => []
+end.
+ *)
+(* create a contract from Coq compile state *)
+
+(* add defined contract to Ethereum contracts, i.e. to ContractsEnv *)
+
+(* prepare contract for running *)
+
+End compile_step_examples.
 
 
 (* Theorem transfer_correct: forall  next_step,
