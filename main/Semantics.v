@@ -18,13 +18,13 @@ Inductive compile_step : CompileState -> CompileState -> Prop :=
     forall name body rest c_st c_st',
       c_st' = replace_contract_fn_env c_st (defineFunction (fn_env c_st) name (Body body)) ->
       compile_step (Define_Function name body :: rest, c_st)
-                   (rest, c_st)
+                   (rest, c_st')
 
-| declare_aexp_fields:
-    forall aexp_env' aexp_names rest c_st c_st',
-      aexp_env' = declareAexpList (aexp_vars c_st) aexp_names ->
+| declare_aexp_field:
+    forall aexp_env' id rest c_st c_st',
+      aexp_env' = declareAexp (aexp_vars c_st) id ->
       c_st' = replace_contract_aexp_env c_st aexp_env' ->
-      compile_step ((Declare_Aexp_Fields aexp_names) :: rest, c_st)
+      compile_step ((Declare_Aexp_Field id) :: rest, c_st)
                    (rest, c_st')
 
 | define_aexp_field:
@@ -34,11 +34,11 @@ Inductive compile_step : CompileState -> CompileState -> Prop :=
       compile_step ((Define_Aexp_Field aexp_def) :: rest, c_st)
                    (rest, c_st')
 
-| declare_bexp_fields:
-    forall bexp_env' bexp_names rest c_st c_st',
-      bexp_env' = declareBexpList (bexp_vars c_st) bexp_names ->
+| declare_bexp_field:
+    forall bexp_env' id rest c_st c_st',
+      bexp_env' = declareBexp (bexp_vars c_st) id ->
       c_st' = replace_contract_bexp_env c_st bexp_env' ->
-      compile_step ((Declare_Bexp_Fields bexp_names) :: rest, c_st)
+      compile_step ((Declare_Bexp_Field id) :: rest, c_st)
                (rest, c_st')
 
 | define_bexp_field:
@@ -48,6 +48,36 @@ Inductive compile_step : CompileState -> CompileState -> Prop :=
       compile_step ((Define_Bexp_Field bexp_def) :: rest, c_st) 
                    (rest, c_st').
 
+Compute function_definition.
+Check function_definition "TEST" [] [] Default_ContractState Default_ContractState.
+
+
+
+(* 
+    Definition CompileState : Type :=  contract_parts * ContractState.
+*)
+
+Let contract := [Declare_Aexp_Field "token";
+                 Define_Function "transfer" [Define_Aexp ("amount", Int 10) ; Transfer "receiver" (AId "amount")]]
+                 .
+
+(* Fixpoint parse_contract (parts : contract_parts) (c_st : ContractState) : list compile_step := 
+match parts with
+| part :: rest => match part with 
+                  | Define_Function name body => function_definition name body rest c_st c_st' :: parse_contract rest c_st'
+(*                   | Declare_Aexp_Fields names => 
+                  | Declare_Bexp_Fields names =>
+                  | Define_Aexp_Field (name, value)
+                  | Define_Bexp_Field (name, value) *)
+                  end
+| _ => []
+end.
+ *)
+(* create a contract from Coq compile state *)
+
+(* add defined contract to Ethereum contracts, i.e. to ContractsEnv *)
+
+(* prepare contract for running *)
 
 (**************************************************************)
 (** Big Step Transitions *)
@@ -83,10 +113,10 @@ Inductive run_step : ExecutionState -> ExecutionState -> Prop :=
 (** aexp var declaration *)
 
 | declare_aexp_local:
-    forall aexp_env' aexp_names rest env env' env_stack c_st c_env bm,
-      aexp_env' = declareAexpList (aexp_env env) aexp_names ->
+    forall aexp_env' id rest env env' env_stack c_st c_env bm,
+      aexp_env' = declareAexp (aexp_env env) id ->
       env' = mkEnv aexp_env' (bexp_env env) (next_code env) (msg_data env) ->
-      run_step ((Declare_Aexp aexp_names) :: rest, env, env_stack, c_st, c_env, bm)
+      run_step ((Declare_Aexp id) :: rest, env, env_stack, c_st, c_env, bm)
             (rest, env', env_stack, c_st, c_env, bm)
 
 (** aexp var definition *)
@@ -123,10 +153,10 @@ Inductive run_step : ExecutionState -> ExecutionState -> Prop :=
 (** bexp var declaration *)
 
 | declare_bexp_local:
-    forall bexp_env' bexp_names rest env env' env_stack c_st c_env bm,
-      bexp_env' = declareBexpList (bexp_env env) bexp_names ->
+    forall bexp_env' id rest env env' env_stack c_st c_env bm,
+      bexp_env' = declareBexp (bexp_env env) id ->
       env' = mkEnv (aexp_env env) bexp_env' (next_code env) (msg_data env) ->
-      run_step ((Declare_Bexp bexp_names) :: rest, env, env_stack, c_st, c_env, bm) 
+      run_step ((Declare_Bexp id) :: rest, env, env_stack, c_st, c_env, bm) 
             (rest, env', env_stack, c_st, c_env, bm)
 
 (** bexp var definition *)
@@ -182,6 +212,9 @@ Inductive run_step : ExecutionState -> ExecutionState -> Prop :=
            ([IfThenElse b (s ++ (While b s :: rest)) rest], env, env_stack, c_st, c_env, bm)
 .
 
+Compute if_true.
+
+Check Transfer "x" (Int 10).
 
 (**************************************************************)
 (** Binary relations on steps *)
@@ -242,7 +275,7 @@ End transfer.
 
 Section function_call.
 
-Let called_fn_code := [Declare_Aexp ["fn_a"]].
+Let called_fn_code := [Declare_Aexp "fn_a"].
 Let called_fn := "called_fn".
 Let called_contract_funs_env := defineFunction Empty_Functions_Env called_fn (Body called_fn_code).
 Let called_contract_address := "called_contract".
@@ -254,10 +287,10 @@ Let example_contracts_env := updateContractsEnv Empty_ContractsEnv called_contra
 
 Let msg_val := Int 0.
 Let msg_val_z := 0.
-Let current_vars := ["a"].
+Let current_vars := "a".
 Let current_code := (Declare_Aexp current_vars) :: (Function_Call (Some called_contract_address) called_fn (Some msg_val)) :: nil.
 
-Let fn_env_before_call := (replace_aexp_env Empty_FunctionEnv (declareAexpList (aexp_env Empty_FunctionEnv) current_vars)).
+Let fn_env_before_call := (replace_aexp_env Empty_FunctionEnv (declareAexp (aexp_env Empty_FunctionEnv) current_vars)).
 Let called_fn_env := replace_msg_data Empty_FunctionEnv (mkMsg  msg_val_z (c_address calling_contract_state)).
 
 Example Step_Into_Call :
@@ -317,7 +350,7 @@ Let called_fn_code := [Define_Aexp ("local_a", Int 100); Assign_Aexp (AId "contr
 Let called_fn := "called_fn".
 Let called_contract_funs_env := defineFunction Empty_Functions_Env called_fn (Body called_fn_code).
 Let called_contract_address := "called_contract".
-Let contract_aexp_env := declareAexpList Empty_Aexp_Env ["contract_a"].
+Let contract_aexp_env := declareAexp Empty_Aexp_Env "contract_a".
 Let called_contract_state := 
 mkContractState called_contract_address called_contract_funs_env contract_aexp_env Empty_Bexp_Env.
 Let final_contract_state :=

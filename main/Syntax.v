@@ -76,8 +76,8 @@ Definition Default_Msg := {| value := 0;
 (** Statements *)
 
 Inductive instr :=
-| Declare_Aexp : list string -> instr
-| Declare_Bexp : list string -> instr
+| Declare_Aexp : string -> instr
+| Declare_Bexp : string -> instr
 
 | Define_Aexp : (string * aexp) -> instr
 | Define_Bexp : (string * bexp) -> instr
@@ -97,8 +97,8 @@ Inductive instr :=
 Inductive contract_part :=
 | Define_Function : string -> list instr -> contract_part
 
-| Declare_Aexp_Fields : list string -> contract_part
-| Declare_Bexp_Fields : list string -> contract_part
+| Declare_Aexp_Field : string -> contract_part
+| Declare_Bexp_Field : string -> contract_part
 
 | Define_Aexp_Field : (string * aexp) -> contract_part
 | Define_Bexp_Field : (string * bexp) -> contract_part.
@@ -204,13 +204,34 @@ fun (fenv : FunctionEnv) (new_msg : msg) => mkEnv (aexp_env fenv) (bexp_env fenv
 
 (** Contract state *)
 
+(**
+  * Introducing contract type.
+  
+ Definition Contract_Vars := string -> ContractState.
+
+Definition Empty_Contract_Vars : Contract_Vars := fun x => Default_ContractState.
+
+Definition updateContract_Vars (env : Contract_Vars) (name : string) (state : ContractState) : Contract_Vars :=
+  fun x => if (string_dec x name) then state
+  else (env x).
+
+Inductive Contract_Vars := 
+| contract_vars : string -> ContractState -> 
+with ContractState :=
+| ctor (c_address : address) (fn_env : Functions_Env)
+       (aexp_vars : Aexp_Env) (bexp_vars : Bexp_Env) (contract_vars : Contract_Vars)
+.
+ *)
+
 Record ContractState :=
 mkContractState {
  c_address : address;
  fn_env : Functions_Env;
  aexp_vars : Aexp_Env;
  bexp_vars : Bexp_Env
+(*  contract_vars : Contract_Vars *)
 }.
+
 
 Definition replace_contract_aexp_env := 
 fun (cstate : ContractState) (new_env : Aexp_Env)
@@ -299,29 +320,14 @@ end.
 (**************************************************************)
 (** Declaration helpers *)
 
-(* Fixpoint declareAexpList (env : Aexp_Env) (decl_pairs : list (string * option aexp)) : Aexp_Env :=
-fun x => match decl_pairs with
-| nil => env x
-| decl :: rest => if (string_dec x (fst decl)) then
-                      match (snd decl) with
-                      | None => unfold_aexp_literal Default_Aexp
-                      | Some v => unfold_aexp_literal v
-                      end
-                  else declareAexpList env rest x
-end. *)
+Fixpoint declareAexp (env : Aexp_Env) (name : string) : Aexp_Env :=
+fun x => if (string_dec x name) then unfold_aexp_literal Default_Aexp
+         else env x.
 
-
-Fixpoint declareAexpList (env : Aexp_Env) (id_list : list string) : Aexp_Env :=
-fun x => match id_list with
-| nil => env x
-| id :: rest => if (string_dec x id) then unfold_aexp_literal Default_Aexp
-                else declareAexpList env rest x
-end.
-
-(** [TEST] declareAexpList *)
+(** [TEST] declareAexp *)
 
 Let env := update_aexp Empty_Aexp_Env (Some "x") 1.
-Compute (declareAexpList env ["y"; "x"]) "x".
+Compute (declareAexp env "y") "x".
 
 (***************************)
 
@@ -341,12 +347,9 @@ Compute (defineAexp env1 ("z", AId "x")) "z".
 (***************************)
 
 
-Fixpoint declareBexpList (env : Bexp_Env) (id_list : list string) : Bexp_Env :=
-fun x => match id_list with
-| nil => env x
-| id :: rest => if (string_dec x id) then unfold_bexp_literal Default_Bexp
-                else declareBexpList env rest x
-end.
+Fixpoint declareBexp (env : Bexp_Env) (name : string) : Bexp_Env :=
+fun x => if (string_dec x name) then unfold_bexp_literal Default_Bexp
+         else env x.
 
 Definition defineBexp (env : Bexp_Env) (def : string * bexp) : Bexp_Env :=
 fun x => match def with
@@ -354,18 +357,6 @@ fun x => match def with
                  else env x
 | (_, _) => env x
 end.
-
-(* Fixpoint declareBexpList (env : Bexp_Env) (decl_pairs : list (string * option bexp)) : Bexp_Env :=
-fun x => match decl_pairs with
-| nil => env x
-| decl :: rest => if (string_dec x (fst decl)) then 
-                      match (snd decl) with
-                      | None => unfold_bexp_literal Default_Bexp
-                      | Some v => unfold_bexp_literal v
-                      end
-                  else declareBexpList env rest x
-end.
- *)
 
 
 (**************************************************************)
