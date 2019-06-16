@@ -90,8 +90,13 @@ Inductive instr :=
 | Skip : instr
 
 (* no params, no return value, with value setter *)
-| Function_Call : option address -> string -> option aexp -> instr (* "this" "f" Some Int value *)
-| Transfer : address_payable -> aexp -> instr.
+| Function_Call : option address -> string -> option aexp -> instr (* example: "this" "f" Some Int value *)
+| Transfer : address_payable -> aexp -> instr
+
+| Revert : option string -> instr
+| Require : bexp -> option string -> instr.
+
+
 
 
 Inductive contract_part :=
@@ -320,7 +325,7 @@ end.
 (**************************************************************)
 (** Declaration helpers *)
 
-Fixpoint declareAexp (env : Aexp_Env) (name : string) : Aexp_Env :=
+Definition declareAexp (env : Aexp_Env) (name : string) : Aexp_Env :=
 fun x => if (string_dec x name) then unfold_aexp_literal Default_Aexp
          else env x.
 
@@ -347,7 +352,7 @@ Compute (defineAexp env1 ("z", AId "x")) "z".
 (***************************)
 
 
-Fixpoint declareBexp (env : Bexp_Env) (name : string) : Bexp_Env :=
+Definition declareBexp (env : Bexp_Env) (name : string) : Bexp_Env :=
 fun x => if (string_dec x name) then unfold_bexp_literal Default_Bexp
          else env x.
 
@@ -400,6 +405,12 @@ end.
 
 
 (** * Some proof examples *)
+
+Example mixed_aexp_ops:
+  eval_aexp Empty_Aexp_Env Empty_BalanceEnv (Plus (Int 1) (Div (Int 4) (Int 2))) = Some 3.
+Proof.
+  reflexivity.
+Qed.
 
 Example unknown_id_evals_none:
   eval_aexp Empty_Aexp_Env Empty_BalanceEnv (AId "a") = None.
