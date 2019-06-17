@@ -10,7 +10,7 @@ Import ListNotations.
 
 Definition EnvStack := list (FunctionState * ContractState).
 
-Definition ExecutionState : Type :=  Code * FunctionState * EnvStack * ContractState * Address2ContractState * Balances.
+Definition ExecutionState : Type :=  Code * FunctionState * EnvStack * ContractState * Address2ContractState * Address2Balance.
 Definition CompileState : Type :=  contract_parts * ContractState.
 
 (* Inductive test_step : CompileState -> CompileState :=
@@ -275,10 +275,10 @@ Let amount_aexp := Int 1.
 Let amount_z := 1.
 
 Let example_contracts_env := Empty_Address2ContractState.
-Let new_balances := (update_balance (update_balance Empty_Balances receiver amount_z) (c_address Default_ContractState) (-amount_z)).
+Let new_balances := (update_balance (update_balance Empty_Address2Balance receiver amount_z) (c_address Default_ContractState) (-amount_z)).
 
 Example transfer_ex:
-  run_steps (Transfer receiver amount_aexp :: nil, Empty_FunctionState, nil, Default_ContractState, example_contracts_env, Empty_Balances)
+  run_steps (Transfer receiver amount_aexp :: nil, Empty_FunctionState, nil, Default_ContractState, example_contracts_env, Empty_Address2Balance)
         (nil, Empty_FunctionState, nil, Default_ContractState, example_contracts_env, new_balances).
 Proof.
   eapply run_trans.
@@ -317,9 +317,9 @@ Let fn_env_before_call := (update_function_aexp_locals Empty_FunctionState (decl
 Let called_fn_env := update_function_msg_data Empty_FunctionState (mkMsg  msg_val_z (c_address calling_contract_state)).
 
 Example Step_Into_Call :
-  run_steps (current_code, Empty_FunctionState, nil, calling_contract_state, example_contracts_env, Empty_Balances)
+  run_steps (current_code, Empty_FunctionState, nil, calling_contract_state, example_contracts_env, Empty_Address2Balance)
         (called_fn_code, called_fn_env, (fn_env_before_call, calling_contract_state) :: nil,
-         called_contract_state, example_contracts_env, Empty_Balances).
+         called_contract_state, example_contracts_env, Empty_Address2Balance).
 Proof.
   eapply run_trans.
   - eapply declare_aexp_local; eauto.
@@ -348,9 +348,9 @@ Default_Address calling_contract_state.
 
 Example Function_exit:
   run_steps (nil, Empty_FunctionState, (fstate_with_remaining_code, calling_contract_state)::nil,
-  called_contract_state, example_contracts_env, Empty_Balances)
+  called_contract_state, example_contracts_env, Empty_Address2Balance)
   (next_code fstate_with_remaining_code, fstate_with_remaining_code, nil,
-   calling_contract_state, example_contracts_env, Empty_Balances).
+   calling_contract_state, example_contracts_env, Empty_Address2Balance).
 Proof.
   eapply run_trans.
   {
@@ -383,8 +383,8 @@ Let final_fn_env :=
 update_function_aexp_locals initial_fn_env (update_aexp_vars (update_aexp_vars contract_aexp_env (Some "local_a") 100) (Some "contract_a") 100).
 
 Example contract_and_local_var:
-run_steps (called_fn_code, initial_fn_env, [], called_contract_state, Empty_Address2ContractState, Empty_Balances)
-      ([], final_fn_env, [], final_contract_state, Empty_Address2ContractState, Empty_Balances).
+run_steps (called_fn_code, initial_fn_env, [], called_contract_state, Empty_Address2ContractState, Empty_Address2Balance)
+      ([], final_fn_env, [], final_contract_state, Empty_Address2ContractState, Empty_Address2Balance).
 Proof.
   eapply run_trans.
   {
@@ -410,7 +410,7 @@ Section looped_transfer.
 Let address_Alice := "alice".
 Let address_Jane := "jane".
 
-Let initial_balances := update_balance (update_balance Empty_Balances address_Jane 0) address_Alice 2.
+Let initial_balances := update_balance (update_balance Empty_Address2Balance address_Jane 0) address_Alice 2.
 Let final_balances := update_balance (update_balance initial_balances address_Jane 1) address_Alice 1.
 
 Let fun_code_Alice := [While (Aexp_Gt (BalanceOf address_Alice) (BalanceOf address_Jane)) [Transfer address_Jane (Int 1)]].

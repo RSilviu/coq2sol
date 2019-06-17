@@ -185,11 +185,11 @@ Definition get_function_code (opt_body : option function_body) : Code :=
 
 (** balances *)
 
-Definition Balances := Env address Z.
-Definition Empty_Balances : Balances := fun a => None.
+Definition Address2Balance := Env address Z.
+Definition Empty_Address2Balance : Address2Balance := fun a => None.
 Definition Default_Balance := 0.
 
-Definition update_balance (map : Balances) (addr : address) (amount : Z) : Balances :=
+Definition update_balance (map : Address2Balance) (addr : address) (amount : Z) : Address2Balance :=
 fun a' => if string_dec addr a' then Some amount else map a'.
 
 
@@ -390,11 +390,11 @@ Definition Msg_Sender := "".
 Record aexp_eval_context :=
 mk_aexp_eval_context {
 vars : Aexp_Vars;
-balances : Balances;
+balances : Address2Balance;
 msg_value : Z
 }.
 
-Definition get_aexp_eval_context (fstate : FunctionState) (bm : Balances) := 
+Definition get_aexp_eval_context (fstate : FunctionState) (bm : Address2Balance) := 
 mk_aexp_eval_context (aexp_locals fstate) bm (value (msg_data fstate)).
 
 
