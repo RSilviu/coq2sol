@@ -121,7 +121,7 @@ Inductive run_step : ExecutionState -> ExecutionState -> Prop :=
     forall aexp_context a x v aexp_locals' rest fstate fstate' env_stack cstate c_env string_id bm,
       string_id = unfold_aexp_id x ->
       aexp_context = get_aexp_eval_context fstate bm ->
-      v = unfold_option_z (eval_aexp aexp_context a) ->
+      v = eval_aexp aexp_context a ->
       aexp_locals' = update_aexp_vars (aexp_locals fstate) string_id v ->
       fstate' = update_function_aexp_locals fstate aexp_locals' ->
       run_step (Assign_Aexp x a :: rest, fstate, env_stack, cstate, c_env, bm) 
@@ -131,7 +131,7 @@ Inductive run_step : ExecutionState -> ExecutionState -> Prop :=
     forall aexp_context a x v contract_aexps local_aexps rest fstate fstate' env_stack cstate cstate' c_env string_id bm,
       string_id = unfold_aexp_id x ->
       aexp_context = get_aexp_eval_context fstate bm ->
-      v = unfold_option_z (eval_aexp aexp_context a) ->
+      v = eval_aexp aexp_context a ->
       local_aexps = update_aexp_vars (aexp_locals fstate) string_id v ->
       contract_aexps = update_aexp_vars (aexp_fields cstate) string_id v ->
       fstate' = update_function_aexp_locals fstate local_aexps ->
@@ -163,7 +163,7 @@ Inductive run_step : ExecutionState -> ExecutionState -> Prop :=
     forall aexp_context b x v bexp_locals' rest fstate fstate' env_stack cstate c_env bm string_id,
       string_id = unfold_bexp_id x ->
       aexp_context = get_aexp_eval_context fstate bm ->
-      v = unfold_option_bool (eval_bexp aexp_context (bexp_locals fstate) b) ->
+      v = eval_bexp aexp_context (bexp_locals fstate) b ->
       bexp_locals' = update_bexp_vars (bexp_locals fstate) string_id v ->
       fstate' = update_function_bexp_locals fstate bexp_locals' ->
       run_step (Assign_Bexp x b :: rest, fstate, env_stack, cstate, c_env, bm) 
@@ -173,7 +173,7 @@ Inductive run_step : ExecutionState -> ExecutionState -> Prop :=
     forall aexp_context b x string_id v contract_bexps local_bexps rest fstate fstate' env_stack cstate cstate' c_env bm,
       string_id = unfold_bexp_id x ->
       aexp_context = get_aexp_eval_context fstate bm ->
-      v = unfold_option_bool (eval_bexp aexp_context (bexp_locals fstate) b) ->
+      v = eval_bexp aexp_context (bexp_locals fstate) b ->
       local_bexps = update_bexp_vars (bexp_locals fstate) string_id v ->
       contract_bexps = update_bexp_vars (bexp_fields cstate) string_id v ->
       fstate' = update_function_bexp_locals fstate local_bexps ->
@@ -377,10 +377,10 @@ Let contract_aexp_env := declare_aexp Empty_Aexp_Vars "contract_a".
 Let called_contract_state := 
 mkContractState called_contract_address called_contract_funs_env contract_aexp_env Empty_Bexp_Vars.
 Let final_contract_state :=
-update_contract_aexp_vars called_contract_state (update_aexp_vars contract_aexp_env (Some "contract_a") 100).
+update_contract_aexp_vars called_contract_state (update_aexp_vars contract_aexp_env (Some "contract_a") (Some 100)).
 Let initial_fn_env := update_function_aexp_locals Empty_FunctionState contract_aexp_env.
 Let final_fn_env := 
-update_function_aexp_locals initial_fn_env (update_aexp_vars (update_aexp_vars contract_aexp_env (Some "local_a") 100) (Some "contract_a") 100).
+update_function_aexp_locals initial_fn_env (update_aexp_vars (update_aexp_vars contract_aexp_env (Some "local_a") (Some 100)) (Some "contract_a") (Some 100)).
 
 Example contract_and_local_var:
 run_steps (called_fn_code, initial_fn_env, [], called_contract_state, Empty_Address2ContractState, Empty_Address2Balance)

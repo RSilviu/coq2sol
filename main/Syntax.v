@@ -140,9 +140,9 @@ aexp_vars : Aexp_Env;
 
 Definition Empty_Aexp_Vars : Aexp_Vars := fun x => None.
 
-Definition update_aexp_vars (env : Aexp_Vars) (var : option string) (val : Z) : Aexp_Vars :=
+Definition update_aexp_vars (env : Aexp_Vars) (var : option string) (val : option Z) : Aexp_Vars :=
   fun x => match var with
-  | Some str => if (string_dec x str) then Some val
+  | Some str => if (string_dec x str) then val
                 else (env x)
   | _ => None
   end.
@@ -153,9 +153,9 @@ Definition update_aexp_vars (env : Aexp_Vars) (var : option string) (val : Z) : 
 Definition Bexp_Vars := Env string bool.
 Definition Empty_Bexp_Vars : Bexp_Vars := fun x => None.
 
-Definition update_bexp_vars (env : Bexp_Vars) (var : option string) (val : bool) : Bexp_Vars :=
+Definition update_bexp_vars (env : Bexp_Vars) (var : option string) (val : option bool) : Bexp_Vars :=
   fun x => match var with
-  | Some str => if (string_dec x str) then Some val
+  | Some str => if (string_dec x str) then val
                 else (env x)
   | _ => None
   end.
@@ -219,6 +219,11 @@ fun (fstate : FunctionState) (new_next_code : Code) => mkFunctionState (aexp_loc
 
 Definition update_function_msg_data := 
 fun (fstate : FunctionState) (new_msg : msg) => mkFunctionState (aexp_locals fstate) (bexp_locals fstate) (next_code fstate) new_msg.
+
+Inductive contract :=
+| CId (ident : string)
+| Ctor (name : string) (* new Test() <=> Ctor "Test" *).
+
 
 
 (** Contract state *)
@@ -347,7 +352,7 @@ fun x => if (string_dec x name) then unfold_aexp_literal Default_Aexp
 
 (** [TEST] declareAexp *)
 
-Let env := update_aexp_vars Empty_Aexp_Vars (Some "x") 1.
+Let env := update_aexp_vars Empty_Aexp_Vars (Some "x") (Some 1).
 Compute (declare_aexp env "y") "x".
 
 (***************************)
@@ -361,7 +366,7 @@ end.
 
 (** [TEST] defineAexp *)
 
-Let env1 := update_aexp_vars Empty_Aexp_Vars (Some "x") 1.
+Let env1 := update_aexp_vars Empty_Aexp_Vars (Some "x") (Some 1).
 Compute (define_aexp env1 ("z", Int 33)) "z".
 Compute (define_aexp env1 ("z", AId "x")) "z".
 
@@ -384,8 +389,6 @@ end.
 (** * Evaluation of expressions *)
 
 (** aexp *)
-
-Definition Msg_Sender := "".
 
 Record aexp_eval_context :=
 mk_aexp_eval_context {
