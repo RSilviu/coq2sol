@@ -77,6 +77,8 @@ Inductive run_step : ExecutionState -> ExecutionState -> Prop :=
       final_bm = (update_balance new_bm src_addr (unfold_option_z (new_bm src_addr) - value)) ->
       run_step (Transfer dest_addr amount :: rest, fstate, env_stack, cstate, c_env, bm)
                (rest, fstate, env_stack, cstate, c_env, final_bm)
+               
+(* Check transfer. *)
 
 | function_call:
     forall aexp_context called_addr msg_val value env_stack cstate c_env cstate' fstate fstate' fcode fname rest bm,
@@ -225,13 +227,22 @@ Inductive run_steps : ExecutionState -> ExecutionState -> Prop :=
     run_step S S' -> run_steps S' S'' -> run_steps S S''.
 
 
+(* Lemma transfer_correct: 
+forall est1 est2 (* transfer params *) dest_addr amount value aexp_context final_bm rest fstate env_stack cstate c_env new_bm src_addr bm,
+transfer est1 est2 -> 
+ *)
+
 Section compile_step_examples.
 
 Let contract := [Declare_Aexp_Field "token";
                  Define_Function "transfer" [Define_Aexp ("amount", Int 10) ; Transfer "receiver" (AId "amount")]]
                  .
+(* Let 
 
-(* Example one: compile_steps 
+Example one: compile_steps (contract, Default_ContractState) ([], ).
+Proof.
+
+Qed.
  *)
 
 
@@ -419,57 +430,18 @@ Let funs_env_Alice := define_function Empty_Functions fun_name_Alice (Body fun_c
 
 Let contract_Alice := mkContractState address_Alice funs_env_Alice Empty_Aexp_Vars Empty_Bexp_Vars.
 
+
 Example Looped_Transfer:
 run_steps (fun_code_Alice, Empty_FunctionState, [], contract_Alice, Empty_Address2ContractState, initial_balances)
       ([], Empty_FunctionState, [], contract_Alice, Empty_Address2ContractState, final_balances).
 Proof.
-  econstructor.
-  {
-    repeat econstructor; eauto.
-  }
-  econstructor.
-  {
-    repeat econstructor; eauto.
-  }
-  econstructor.
-  {
-    repeat econstructor; eauto.
-  }
-  econstructor.
-  {
-    repeat econstructor; eauto.
-  }
-  econstructor.
-  {
-    eapply if_false; eauto.
-  }
+  econstructor. repeat econstructor.
+  econstructor. repeat econstructor.
+  econstructor. repeat econstructor.
+  econstructor. repeat econstructor.
+  econstructor. eapply if_false; eauto.
   econstructor.
 Qed.
-
-
-(* Proof.
-  eapply run_trans.
-  {
-    eapply while; eauto.
-  }
-  eapply run_trans.
-  {  
-    eapply if_true; eauto.
-  }
-  eapply run_trans.
-  {
-    eapply transfer; eauto.
-  }
-  eapply run_trans.
-  {
-    eapply while; eauto.
-  }
-  eapply run_trans.
-  {  
-    eapply if_false; eauto.
-  }
-  apply run_refl.
-Qed. *)
 
 End looped_transfer.
 
