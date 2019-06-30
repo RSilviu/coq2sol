@@ -13,12 +13,7 @@ Definition EnvStack := list (FunctionState * ContractState).
 Definition ExecutionState : Type :=  Code * FunctionState * EnvStack * ContractState * Address2ContractState * Address2Balance.
 Definition PreprocessState : Type :=  contract_parts * ContractState.
 
-(* Inductive test_step : PreprocessState -> PreprocessState :=
-| 
-.
 
-Definition agg (state : PreprocessState) (states : list PreprocessState) := state :: states.
- *)
 Inductive preprocess_step : PreprocessState -> PreprocessState -> Prop :=
 | function_definition:
     forall name body rest cstate cstate',
@@ -57,11 +52,6 @@ Inductive preprocess_step : PreprocessState -> PreprocessState -> Prop :=
 Compute function_definition.
 Check function_definition "TEST" [] [] Default_ContractState Default_ContractState.
 
-
-
-(* 
-    Definition PreprocessState : Type :=  contract_parts * ContractState.
-*)
 
 
 (**************************************************************)
@@ -205,9 +195,6 @@ Inductive run_step : ExecutionState -> ExecutionState -> Prop :=
            ([IfThenElse b (s ++ (While b s :: rest)) rest], fstate, env_stack, cstate, c_env, bm)
 .
 
-Compute if_true.
-
-Check Transfer "x" (Int 10).
 
 (**************************************************************)
 (** Binary relations on steps *)
@@ -225,11 +212,21 @@ Inductive run_steps : ExecutionState -> ExecutionState -> Prop :=
     run_step S S' -> run_steps S' S'' -> run_steps S S''.
 
 
-(* 
-Lemma transfer_correct:
-forall s1 s2 (* transfer params *) dest_addr amount value aexp_context final_bm rest fstate env_stack cstate c_env new_bm src_addr bm,
 
- *)
+Lemma transfer_correct: forall final_bm rest fstate env_stack cstate c_env bm,
+c_address cstate = "src_addr" ->
+run_step (Transfer "dest_addr" (Int 1) :: rest, fstate, env_stack, cstate, c_env, bm)
+         (rest, fstate, env_stack, cstate, c_env, final_bm) ->
+final_bm "dest_addr" = Some (unfold_option_z (bm "dest_addr") + 1) /\
+final_bm (c_address cstate) = Some (unfold_option_z (bm (c_address cstate)) - 1).
+Proof.
+  intros. inversion H0 as [].
+  rewrite H5, H4, H3, H2, H1. 
+  unfold update_balance. unfold unfold_option_z. unfold unfold_option.
+  rewrite H. auto.
+Qed.
+
+
 
 Section preprocess_step_examples.
 
