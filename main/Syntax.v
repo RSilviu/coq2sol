@@ -7,6 +7,7 @@ Open Scope Z_scope.
 
 Import ListNotations.
 
+
 (**************************************************************)
 (** Solidity address *)
 
@@ -269,6 +270,8 @@ Definition update_contract_functions :=
 fun (cstate : ContractState) (new_env : Functions)
  => mkContractState (c_address cstate) new_env (aexp_fields cstate) (bexp_fields cstate).
 
+(* TODO: consider function, contract states as Inductive types, use simple label for default state instead
+of initializers *)
 
 Definition Default_ContractState := {| c_address := Default_Address;
                                        functions := Empty_Functions;
@@ -439,6 +442,7 @@ match opt_aexp with
 end.
 
 
+(* TODO: Fix after updates *)
 (** * Some proof examples *)
 
 (* Example mixed_aexp_ops:

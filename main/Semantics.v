@@ -11,47 +11,47 @@ Import ListNotations.
 Definition EnvStack := list (FunctionState * ContractState).
 
 Definition ExecutionState : Type :=  Code * FunctionState * EnvStack * ContractState * Address2ContractState * Address2Balance.
-Definition CompileState : Type :=  contract_parts * ContractState.
+Definition PreprocessState : Type :=  contract_parts * ContractState.
 
-(* Inductive test_step : CompileState -> CompileState :=
+(* Inductive test_step : PreprocessState -> PreprocessState :=
 | 
 .
 
-Definition agg (state : CompileState) (states : list CompileState) := state :: states.
+Definition agg (state : PreprocessState) (states : list PreprocessState) := state :: states.
  *)
-Inductive compile_step : CompileState -> CompileState -> Prop :=
+Inductive preprocess_step : PreprocessState -> PreprocessState -> Prop :=
 | function_definition:
     forall name body rest cstate cstate',
       cstate' = update_contract_functions cstate (define_function (functions cstate) name (Body body)) ->
-      compile_step (Define_Function name body :: rest, cstate)
+      preprocess_step (Define_Function name body :: rest, cstate)
                    (rest, cstate')
 
 | declare_aexp_field:
     forall aexp_env' id rest cstate cstate',
       aexp_env' = declare_aexp (aexp_fields cstate) id ->
       cstate' = update_contract_aexp_vars cstate aexp_env' ->
-      compile_step ((Declare_Aexp_Field id) :: rest, cstate)
+      preprocess_step ((Declare_Aexp_Field id) :: rest, cstate)
                    (rest, cstate')
 
 | define_aexp_field:
     forall aexp_env' aexp_def rest cstate cstate',
       aexp_env' = define_aexp (aexp_fields cstate) aexp_def ->
       cstate' = update_contract_aexp_vars cstate aexp_env' ->
-      compile_step ((Define_Aexp_Field aexp_def) :: rest, cstate)
+      preprocess_step ((Define_Aexp_Field aexp_def) :: rest, cstate)
                    (rest, cstate')
 
 | declare_bexp_field:
     forall bexp_env' id rest cstate cstate',
       bexp_env' = declare_bexp (bexp_fields cstate) id ->
       cstate' = update_contract_bexp_vars cstate bexp_env' ->
-      compile_step ((Declare_Bexp_Field id) :: rest, cstate)
+      preprocess_step ((Declare_Bexp_Field id) :: rest, cstate)
                (rest, cstate')
 
 | define_bexp_field:
     forall bexp_env' bexp_def rest cstate cstate',
       bexp_env' = define_bexp (bexp_fields cstate) bexp_def ->
       cstate' = update_contract_bexp_vars cstate bexp_env' ->
-      compile_step ((Define_Bexp_Field bexp_def) :: rest, cstate) 
+      preprocess_step ((Define_Bexp_Field bexp_def) :: rest, cstate) 
                    (rest, cstate').
 
 Compute function_definition.
@@ -60,7 +60,7 @@ Check function_definition "TEST" [] [] Default_ContractState Default_ContractSta
 
 
 (* 
-    Definition CompileState : Type :=  contract_parts * ContractState.
+    Definition PreprocessState : Type :=  contract_parts * ContractState.
 *)
 
 
@@ -212,11 +212,11 @@ Check Transfer "x" (Int 10).
 (**************************************************************)
 (** Binary relations on steps *)
 
-Inductive compile_steps : CompileState -> CompileState -> Prop :=
-| compile_refl : forall S,
-    compile_steps S S
-| compile_trans: forall S S' S'',
-    compile_step S S' -> compile_steps S' S'' -> compile_steps S S''.
+Inductive preprocess_steps : PreprocessState -> PreprocessState -> Prop :=
+| preprocess_refl : forall S,
+    preprocess_steps S S
+| preprocess_trans: forall S S' S'',
+    preprocess_step S S' -> preprocess_steps S' S'' -> preprocess_steps S S''.
 
 Inductive run_steps : ExecutionState -> ExecutionState -> Prop :=
 | run_refl : forall S,
@@ -225,17 +225,38 @@ Inductive run_steps : ExecutionState -> ExecutionState -> Prop :=
     run_step S S' -> run_steps S' S'' -> run_steps S S''.
 
 
-Section compile_step_examples.
+(* 
+Lemma transfer_correct:
+forall s1 s2 (* transfer params *) dest_addr amount value aexp_context final_bm rest fstate env_stack cstate c_env new_bm src_addr bm,
 
-Let contract := [Declare_Aexp_Field "token";
-                 Define_Function "transfer" [Define_Aexp ("amount", Int 10) ; Transfer "receiver" (AId "amount")]]
-                 .
-
-(* Example one: compile_steps 
  *)
 
+Section preprocess_step_examples.
 
-(* Fixpoint parse_contract (parts : contract_parts) (cstate : ContractState) : list compile_step := 
+Let fn_body := [Define_Aexp ("amount", Int 10) ; Transfer "receiver" (AId "amount")].
+
+Let contract := [Declare_Aexp_Field "token";
+                 Define_Function "transfer" fn_body].
+
+Let result_state := update_contract_functions
+(update_contract_aexp_vars Default_ContractState (declare_aexp Empty_Aexp_Vars "token"))
+(define_function Empty_Functions "transfer" (Body fn_body)).
+
+Example preprocess_demo: preprocess_steps (contract, Default_ContractState) ([], result_state).
+Proof.
+eapply preprocess_trans.
+{
+  eapply declare_aexp_field; eauto.
+}
+eapply preprocess_trans.
+{
+  eapply function_definition. reflexivity.
+}
+eapply preprocess_refl.
+Qed.
+
+
+(* Fixpoint parse_contract (parts : contract_parts) (cstate : ContractState) : list preprocess_step := 
 match parts with
 | part :: rest => match part with 
                   | Define_Function name body => function_definition name body rest cstate cstate' :: parse_contract rest cstate'
@@ -253,7 +274,7 @@ end.
 
 (* prepare contract for running *)
 
-End compile_step_examples.
+End preprocess_step_examples.
 
 
 (* Theorem transfer_correct: forall  next_step,
@@ -419,57 +440,20 @@ Let funs_env_Alice := define_function Empty_Functions fun_name_Alice (Body fun_c
 
 Let contract_Alice := mkContractState address_Alice funs_env_Alice Empty_Aexp_Vars Empty_Bexp_Vars.
 
+Ltac repeatable := repeat first [econstructor | repeat econstructor | eapply if_false; eauto].
+
 Example Looped_Transfer:
 run_steps (fun_code_Alice, Empty_FunctionState, [], contract_Alice, Empty_Address2ContractState, initial_balances)
       ([], Empty_FunctionState, [], contract_Alice, Empty_Address2ContractState, final_balances).
 Proof.
-  econstructor.
-  {
-    repeat econstructor; eauto.
-  }
-  econstructor.
-  {
-    repeat econstructor; eauto.
-  }
-  econstructor.
-  {
-    repeat econstructor; eauto.
-  }
-  econstructor.
-  {
-    repeat econstructor; eauto.
-  }
-  econstructor.
-  {
-    eapply if_false; eauto.
-  }
+  
+  econstructor. repeat econstructor.
+  econstructor. repeat econstructor.
+  econstructor. repeat econstructor.
+  econstructor. repeat econstructor.
+  econstructor. eapply if_false; eauto.
   econstructor.
 Qed.
-
-
-(* Proof.
-  eapply run_trans.
-  {
-    eapply while; eauto.
-  }
-  eapply run_trans.
-  {  
-    eapply if_true; eauto.
-  }
-  eapply run_trans.
-  {
-    eapply transfer; eauto.
-  }
-  eapply run_trans.
-  {
-    eapply while; eauto.
-  }
-  eapply run_trans.
-  {  
-    eapply if_false; eauto.
-  }
-  apply run_refl.
-Qed. *)
 
 End looped_transfer.
 
